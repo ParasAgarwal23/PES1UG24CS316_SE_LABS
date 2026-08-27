@@ -20,7 +20,6 @@ digitally signed prescriptions.
 | Deliverable | File |
 |---|---|
 | Requirements Table (5 FR + 2 NFR) | `Requirements/Requirements_Table.xlsx` |
-| UML Use-Case Diagram (editable) | `UML/Telemedicine_Use_Case_Diagram.drawio` |
 | UML Use-Case Diagram (export) | `UML/Telemedicine_Use_Case_Diagram.pdf` |
 | Use-Case Flow Specification | `Use-Case-Flow/Book_Consultation_Flow.docx` and `.pdf` |
 
