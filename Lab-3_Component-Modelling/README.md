@@ -3,7 +3,7 @@
 **Course:** Software Engineering  
 **Lab:** Lab 3 – Component Modelling & Architectural Pattern Selection  
 **SRN:** PES1UG24CS316  
-**NAME:** PARAS AGARWAL
+**Name:** Paras Agarwal  
 **Problem Statement:** 11 – Telemedicine Slot Booking & Prescription Portal
 
 ## Objective
