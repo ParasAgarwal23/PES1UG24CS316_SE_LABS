@@ -1,73 +1,152 @@
-# Maze Chase
+# Lab 4 – Vibe Coding: Maze Chase
 
-Escape a maze while being hunted by an AI enemy that navigates using BFS pathfinding.
+**Course:** Software Engineering  
+**Lab:** Lab 4 – Vibe Coding  
+**SRN:** PES1UG24CS316  
+**Name:** PARAS AGARWAL  
 
-## Setup
+## Objective
 
-```bash
-pip install -r requirements.txt
-python main.py
-```
+To use an **LLM-assisted Vibe Coding workflow** to understand, modify, test, and extend an existing Maze Chase game by implementing the assigned gameplay features and documenting the development process.
 
-## Controls
+## Project Overview
 
-| Key | Action |
-|-----|--------|
-| W/A/S/D or Arrows | Move |
-| R | Restart |
+The starter project is a Maze Chase game developed in Python.
 
-## Tasks to Complete
+For this lab, **Claude was used as the Vibe Coding assistant** to review the existing codebase and assist in implementing the required modifications.
 
-### Task 1: Multiple Enemies
-> Add 2 more enemies starting at different corners. Each chases the player independently.
+The following four gameplay features were implemented:
 
-**Quick Start Prompt:**
-```
-In my maze-chase pygame game, I have one Enemy that uses BFS to chase the player. Add two more Enemy instances starting at different maze corners. Each should independently call bfs() on every update. List them in a self.enemies list and loop over them.
-```
+1. Multiple enemies
+2. Progressive enemy speed
+3. Power pellet freeze
+4. Survival score
 
-### Task 2: Speed Up Over Time
-> Every 15 seconds the enemy move interval decreases, making it faster.
+Each feature was implemented and tested incrementally.
 
-**Quick Start Prompt:**
-```
-Add a difficulty ramp to my maze-chase game. Track elapsed time with pygame.time.get_ticks(). Every 15 seconds, reduce enemy.move_interval by 2 (minimum 5). Show current enemy speed tier in the HUD.
-```
+## Features Implemented
 
-### Task 3: Power Pellet (Freeze Enemy)
-> Place a power pellet in the maze. Collecting it freezes the enemy for 5 seconds.
+### Task 1 – Multiple Enemies
 
-**Quick Start Prompt:**
-```
-Add a power pellet to my maze-chase game — a yellow circle somewhere in the maze. When the player rect collides with it, set enemy.frozen = True and start a 300-frame countdown. While frozen, enemy.update() does nothing. Show a frozen indicator on the enemy.
-```
+The game was extended to support multiple enemies instead of a single enemy.
 
-### Task 4: Score by Distance
-> Score increases every frame the player stays alive. Show a survival score.
+This increases the difficulty of the game by requiring the player to avoid several enemies moving through the maze.
 
-**Quick Start Prompt:**
-```
-Add a survival score to maze-chase. Increment self.score by 1 each frame the player is alive. Display it in the HUD as "Survived: Xs" where X is score // 60. On game over, show the final score on the overlay.
-```
+### Task 2 – Enemy Speed Progression
 
-## Folder Structure
+Enemy speed increases as the player survives longer.
 
-```
-maze-chase/
+- Enemy speed increases every **15 seconds**
+- The current speed progression is reflected during gameplay
+- The game therefore becomes progressively more difficult over time
+
+### Task 3 – Power Pellet Freeze
+
+A power pellet mechanic was added to temporarily freeze enemies.
+
+When the player activates the power pellet:
+
+- Enemies enter a frozen state
+- Frozen enemies temporarily stop moving
+- The freeze effect lasts for approximately **5 seconds**
+- A visual indication is provided while enemies are frozen
+
+### Task 4 – Survival Score
+
+A survival-based scoring system was added.
+
+The game tracks the player's survival progress and displays the score during gameplay. The final score is also displayed when the game ends.
+
+## Code Modified
+
+The primary source files modified during the lab were:
+
+### `game/game_engine.py`
+
+Contains the main gameplay changes required to integrate the four tasks, including:
+
+- Multiple-enemy handling
+- Enemy speed progression
+- Power pellet and freeze timing
+- Survival score tracking
+- Gameplay/HUD updates
+
+### `game/entities.py`
+
+Modified to support enemy freeze behaviour, including:
+
+- Enemy frozen state
+- Preventing enemy movement while frozen
+- Visual representation of the frozen state
+
+## Vibe Coding with Claude
+
+**Claude was used as the LLM assistant for the Vibe Coding process in this lab.**
+
+The development workflow consisted of:
+
+1. Reviewing the existing Maze Chase codebase
+2. Providing the relevant source code and task requirements to Claude
+3. Using Claude to understand the existing implementation and generate suggested code modifications
+4. Applying the suggested changes to the project
+5. Running and testing the game locally
+6. Refining the implementation where required
+7. Committing the completed features incrementally using Git
+
+This approach allowed each required feature to be implemented and tested separately while maintaining a clear development history.
+
+### Claude Chat
+
+The Claude conversation used during the Vibe Coding process can be viewed here:
+
+**[View Claude Vibe Coding Chat](https://claude.ai/share/debc628c-9301-491f-9c93-5f42ba15689e)**
+
+The exported conversation is also included in the repository as:
+
+`Chat_History_Claude.pdf`
+
+## Deliverables
+
+The Lab 4 submission includes:
+
+- Updated Maze Chase source code
+- Before-modification gameplay video
+- After-modification gameplay video
+- Claude Vibe Coding chat history PDF
+- Claude conversation link
+- README documentation
+
+### Submission Files
+
+```text
+Lab-4_Vibe-Coding-Maze-Chase/
+├── game/
 ├── main.py
 ├── requirements.txt
-├── game/
-│   ├── __init__.py
-│   ├── game_engine.py
-│   ├── maze.py
-│   └── entities.py
-└── README.md
+├── README.md
+├── PES1UG24CS316_before_video.mp4
+├── PES1UG24CS316_after_video.mp4
+├── Chat_History_Claude.pdf
+└── Chat_Link_Claude.md
 ```
 
-## Submission Checklist
+## Implementation History
 
-- [ ] All 4 tasks completed
-- [ ] Multiple enemies work independently
-- [ ] Power pellet freezes enemy correctly
-- [ ] Speed ramp increases difficulty over time
-- [ ] Code reviewed with LLM (include chat link)
+The project was developed incrementally, with separate Git commits for the major tasks:
+
+- Task 1 – Multiple enemies
+- Task 2 – Enemy speed progression
+- Task 3 – Power pellet freeze
+- Task 4 – Survival score
+- Final submission deliverables
+
+## Tools / Concepts Used
+
+- Python
+- Git and GitHub
+- Vibe Coding
+- LLM-Assisted Development
+- Claude
+- Incremental Development
+- Game Logic Modification
+- Testing and Debugging
