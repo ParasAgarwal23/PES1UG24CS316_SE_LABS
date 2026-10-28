@@ -1,0 +1,81 @@
+Scholarship screener - program output BEFORE fixes (original starter scholarship_system.py)
+Command : .\.venv\Scripts\python.exe scholarship_system.py  (working directory: Lab-5_Static_Code_Analysis)
+Python  : 3.13.7
+Each run answers the program's single 'Merit formula' prompt with
+the input shown. The answer is piped, so it is not echoed after the
+prompt. stdout and stderr are captured together, in order.
+
+========================================================================
+Run 1 - default formula
+Input: <Enter> (empty line)
+------------------------------------------------------------------------
+Merit formula (Enter to keep default): Shortlisted applicants:
+  U001 score = 99.0
+  U003 score = 119.0
+  U005 score = 90.0
+------------------------------------------------------------------------
+Exit code: 0
+
+========================================================================
+Run 2 - custom valid formula
+Input: gpa * 10 + credits * 3
+------------------------------------------------------------------------
+Merit formula (Enter to keep default): Shortlisted applicants:
+  U001 score = 99.0
+  U003 score = 119.0
+  U005 score = 93.0
+------------------------------------------------------------------------
+Exit code: 0
+
+========================================================================
+Run 3 - syntactically invalid formula
+Input: gpa *
+------------------------------------------------------------------------
+Merit formula (Enter to keep default): Traceback (most recent call last):
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 59, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 54, in main
+    evaluate_applicant("U005", {"gpa": 8.4, "credits": 3, "income": 600000})
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 18, in evaluate_applicant
+    score = calculate_merit_score(gpa, credits)
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 12, in calculate_merit_score
+    return eval(MERIT_FORMULA)
+  File "<string>", line 1
+    gpa *
+SyntaxError: invalid syntax
+------------------------------------------------------------------------
+Exit code: 1
+
+========================================================================
+Run 4 - formula using an unknown name
+Input: income * 2
+------------------------------------------------------------------------
+Merit formula (Enter to keep default): Traceback (most recent call last):
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 59, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 54, in main
+    evaluate_applicant("U005", {"gpa": 8.4, "credits": 3, "income": 600000})
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 18, in evaluate_applicant
+    score = calculate_merit_score(gpa, credits)
+  File "C:\Users\paras\Documents\SEM5\SE\Lab\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\scholarship_system.py", line 12, in calculate_merit_score
+    return eval(MERIT_FORMULA)
+  File "<string>", line 1, in <module>
+NameError: name 'income' is not defined
+------------------------------------------------------------------------
+Exit code: 1
+
+========================================================================
+Run 5 - code-injection probe (harmless payload: prints one line)
+Input: __import__("builtins").print("[!] arbitrary code executed via eval") or 100
+------------------------------------------------------------------------
+Merit formula (Enter to keep default): [!] arbitrary code executed via eval
+Shortlisted applicants:
+  U001 score = 99.0
+  U003 score = 119.0
+  U005 score = 100
+------------------------------------------------------------------------
+Exit code: 0
