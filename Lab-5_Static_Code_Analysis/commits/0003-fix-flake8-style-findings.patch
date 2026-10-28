@@ -1,0 +1,783 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ParasAgarwal23 <parasagarwal2006@gmail.com>
+Date: Wed, 28 Oct 2026 20:12:38 +0530
+Subject: [PATCH] style: resolve Flake8 findings and finalize Lab 5
+
+- Flake8 E302 x13 and E305 x1: add the second blank line around every
+  top-level definition. The change to scholarship_system.py is blank
+  lines only. Flake8 now reports nothing, Pylint stays at 10.00/10 and
+  Bandit reports no issues.
+- Regenerate reports/after from the final code: program output, Bandit
+  and Flake8 reports, and the 46-test run. The Pylint report is
+  unchanged.
+- Add the Lab 5 README and issues.md.
+- Extend the root README into an overview of Labs 1-5.
+- Ignore F-Sec_Lab-5-Repo-Assignemnt.pdf by its exact path. It lists
+  other students' names and SRNs, so it stays on this computer only.
+- Add commits/ with the three fix commits as patch files, made with
+  git format-patch --zero-commit. The third patch leaves out commits/
+  itself. .gitattributes keeps the patch files byte-for-byte as
+  generated, so git apply --index also works on Windows checkouts.
+---
+ Lab-5_Static_Code_Analysis/.gitattributes     |   3 +
+ Lab-5_Static_Code_Analysis/.gitignore         |   3 +
+ Lab-5_Static_Code_Analysis/README.md          | 308 ++++++++++++++++++
+ Lab-5_Static_Code_Analysis/issues.md          |  67 ++++
+ .../reports/after/bandit_report.txt           |   2 +-
+ .../reports/after/flake8_report.txt           |   0
+ .../reports/after/program_output.txt          |  64 ++++
+ .../reports/after/test_output.txt             |  51 +++
+ .../scholarship_system.py                     |  14 +
+ README.md                                     |  73 +++++
+ 10 files changed, 584 insertions(+), 1 deletion(-)
+ create mode 100644 Lab-5_Static_Code_Analysis/.gitattributes
+ create mode 100644 Lab-5_Static_Code_Analysis/README.md
+ create mode 100644 Lab-5_Static_Code_Analysis/issues.md
+ create mode 100644 Lab-5_Static_Code_Analysis/reports/after/flake8_report.txt
+ create mode 100644 Lab-5_Static_Code_Analysis/reports/after/program_output.txt
+ create mode 100644 Lab-5_Static_Code_Analysis/reports/after/test_output.txt
+
+diff --git a/Lab-5_Static_Code_Analysis/.gitattributes b/Lab-5_Static_Code_Analysis/.gitattributes
+new file mode 100644
+index 0000000..8242f8d
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/.gitattributes
+@@ -0,0 +1,3 @@
++# Keep the patch files exactly as generated (LF line endings), so that
++# git apply and git am work on every platform.
++commits/*.patch -text
+diff --git a/Lab-5_Static_Code_Analysis/.gitignore b/Lab-5_Static_Code_Analysis/.gitignore
+index 4a32695..d165de1 100644
+--- a/Lab-5_Static_Code_Analysis/.gitignore
++++ b/Lab-5_Static_Code_Analysis/.gitignore
+@@ -1,3 +1,6 @@
+ __pycache__/
+ .venv/
+ scholarships.json
++
++# Class list with other students' names and SRNs: keep it local only.
++/F-Sec_Lab-5-Repo-Assignemnt.pdf
+diff --git a/Lab-5_Static_Code_Analysis/README.md b/Lab-5_Static_Code_Analysis/README.md
+new file mode 100644
+index 0000000..5788c03
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/README.md
+@@ -0,0 +1,308 @@
++# Lab 5 — Static Code Analysis
++
++**Course:** Software Engineering  
++**Lab:** Lab 5 — Static Code Analysis  
++**SRN:** PES1UG24CS316  
++**Name:** Paras Agarwal  
++**Assigned project:** Student Scholarship Eligibility Screener (starter repository [SETAPESU26/L5_11_scholarship_screener](https://github.com/SETAPESU26/L5_11_scholarship_screener))
++
++## Objective
++
++To improve the quality, security and style of a Python program using three
++static analysis tools:
++
++- **Pylint** checks code quality and logic errors.
++- **Bandit** finds security problems.
++- **Flake8** enforces the PEP 8 style guide.
++
++The work followed four steps:
++
++1. Run the original program and record a baseline report from each tool.
++2. Document the findings in an issue table.
++3. Fix them in three commits, one per tool.
++4. Verify the fixes by re-running the tools, the program and a test suite.
++
++## The application
++
++`scholarship_system.py` screens scholarship applicants. When run, it:
++
++1. asks for a merit formula (press Enter to keep the default);
++2. computes each applicant's **merit score** from GPA and extracurricular
++   credits;
++3. marks an applicant **eligible** when the score reaches the cutoff **and**
++   the family income is below the income limit;
++4. saves the results to `scholarships.json`, loads them back and prints the
++   shortlist.
++
++If the results cannot be saved, for example because `scholarships.json` is
++read-only, the program prints a one-line warning instead of crashing. It does
++not read the old file back, so an older file cannot replace this run's
++results, and it prints the shortlist from memory.
++
++| Rule | Value |
++|---|---|
++| Default merit formula | `gpa * 10 + credits * 2` |
++| Merit cutoff | score of at least 85 |
++| Income limit | income below 800000 |
++| GPA | required; a finite number from 0 to 10 |
++| Extracurricular credits | optional, default 0; finite and not negative |
++| Family income | optional, default 0; finite and not negative |
++
++Invalid applicant data raises `ValueError`, and the applicant is not recorded.
++The demo prints `Skipped <id>: <reasons>` for it. Applicant U003 has invalid
++data (GPA 12.5, credits −3, income −1) and is kept in the demo on purpose to
++show this check.
++
++**Custom merit formulas** may use only:
++
++- the variables `gpa` and `credits`;
++- int or float constants;
++- parentheses;
++- the operators `+ - * /` and unary `+` / `-`.
++
++A formula can be at most 100 characters and 50 syntax nodes long. Anything
++else is rejected with a message and the current formula is kept, including
++function calls, attribute access, subscripts, other names, `**`, comparisons,
++and boolean, string, complex or infinite constants. Formulas are never passed
++to `eval()`. If a formula divides by zero or gives a non-finite score for one
++applicant, that applicant is skipped.
++
++Sample data and the expected result with the default formula:
++
++| Applicant | GPA | Credits | Income | Score | Result |
++|---|---|---|---|---|---|
++| U001 | 9.1 | 4 | 450000 | 99.0 | shortlisted |
++| U002 | 7.2 | 1 | 300000 | 74.0 | below cutoff |
++| U003 | 12.5 | −3 | −1 | — | skipped: invalid data |
++| U004 | 6.5 | (0) | (0) | 65.0 | below cutoff |
++| U005 | 8.4 | 3 | 600000 | 90.0 | shortlisted |
++
++## Folder contents
++
++```text
++Lab-5_Static_Code_Analysis/
++├── README.md                     this guide
++├── scholarship_system.py         the screener (final version)
++├── test_scholarship_system.py    46 functional tests (unittest)
++├── issues.md                     issue table: findings and fixes
++├── requirements.txt              pinned analysis tools
++├── .gitignore                    ignores .venv/, __pycache__/, scholarships.json and the class-list PDF
++├── .gitattributes                keeps the patch files byte-for-byte as generated
++├── Lab_5_Static_Code_Analysis_Student_handout.pdf
++├── commits/                      the three fix commits as patch files
++│   ├── 0001-fix-bandit-security-findings.patch
++│   ├── 0002-fix-pylint-quality-findings.patch
++│   └── 0003-fix-flake8-style-findings.patch
++└── reports/
++    ├── before/                   original starter code
++    │   ├── program_output.txt
++    │   ├── pylint_report.txt
++    │   ├── bandit_report.txt
++    │   └── flake8_report.txt
++    └── after/                    final code
++        ├── program_output.txt
++        ├── pylint_report.txt
++        ├── bandit_report.txt
++        ├── flake8_report.txt     empty: Flake8 reported nothing
++        └── test_output.txt
++```
++
++## Setup (Windows PowerShell)
++
++Run the commands below from this folder. Python 3.13.7 was used.
++
++```powershell
++python -m venv .venv
++.\.venv\Scripts\python.exe -m pip install --upgrade pip
++.\.venv\Scripts\python.exe -m pip install -r requirements.txt
++```
++
++The program itself needs only the Python standard library.
++`requirements.txt` pins the tool versions used for every report: Pylint 4.1.3,
++Bandit 1.9.4 and Flake8 7.4.1.
++
++## Run the application
++
++```powershell
++.\.venv\Scripts\python.exe scholarship_system.py
++```
++
++At the prompt, press Enter to keep the default formula or type one, for
++example `gpa * 10 + credits * 3`. To supply the answer without typing it:
++
++```powershell
++cmd /c "echo.| .venv\Scripts\python.exe scholarship_system.py"
++cmd /c "echo gpa * 10 + credits * 3| .venv\Scripts\python.exe scholarship_system.py"
++```
++
++These use `cmd`'s `echo` because Windows PowerShell can add an invisible
++byte-order mark (U+FEFF) to text piped into a program. The screener then
++rejects the formula as invalid and keeps the default. Each run writes
++`scholarships.json` in the current folder; Git ignores this file.
++
++## Run the tests
++
++```powershell
++.\.venv\Scripts\python.exe -m unittest -v
++```
++
++The 46 tests fall into six groups:
++
++- **Formula security:** end-to-end through the prompt, including a
++  code-injection payload.
++- **Merit scores and formula checking.**
++- **Eligibility rules and input validation.**
++- **JSON persistence:** saving, including write failures such as a
++  permission error or a full disk (simulated), and loading missing,
++  malformed, undecodable and wrongly structured files.
++- **Shortlist output.**
++- **`main()` and import behaviour,** including a run whose results cannot be
++  saved.
++
++The tests use temporary folders and leave no files behind. Each requirement
++was also broken on purpose in a copy of the code (21 variants, such as
++restoring `logs=[]`, allowing `**` or reading an old results file back after
++a failed save), and the suite failed every time.
++
++## Run the static analysis tools
++
++```powershell
++.\.venv\Scripts\python.exe -m pylint scholarship_system.py
++.\.venv\Scripts\python.exe -m bandit -r scholarship_system.py
++.\.venv\Scripts\python.exe -m flake8 scholarship_system.py
++```
++
++These commands saved the reports in `reports/after/`. The `reports/before/`
++files were produced the same way from the original code.
++
++```powershell
++.\.venv\Scripts\python.exe -m pylint scholarship_system.py | Out-File -Encoding utf8 reports\after\pylint_report.txt
++.\.venv\Scripts\python.exe -m bandit -r scholarship_system.py | Out-File -Encoding utf8 reports\after\bandit_report.txt
++.\.venv\Scripts\python.exe -m flake8 scholarship_system.py | Out-File -Encoding utf8 reports\after\flake8_report.txt
++cmd /c ".venv\Scripts\python.exe -m unittest -v > reports\after\test_output.txt 2>&1"
++```
++
++A few notes on these commands:
++
++- `Out-File -Encoding utf8` is used because `>` in Windows PowerShell 5.1 can
++  write UTF-16.
++- Each tool exits with a non-zero code when it finds issues. On the original
++  code that is expected and is not a setup error.
++- Bandit also prints `[main] INFO` lines to the console. They are not part of
++  the report.
++
++## Reports
++
++| Report | Before (original starter code) | After (final code) |
++|---|---|---|
++| Program output | [`reports/before/program_output.txt`](reports/before/program_output.txt) | [`reports/after/program_output.txt`](reports/after/program_output.txt) |
++| Pylint | [`reports/before/pylint_report.txt`](reports/before/pylint_report.txt) | [`reports/after/pylint_report.txt`](reports/after/pylint_report.txt) |
++| Bandit | [`reports/before/bandit_report.txt`](reports/before/bandit_report.txt) | [`reports/after/bandit_report.txt`](reports/after/bandit_report.txt) |
++| Flake8 | [`reports/before/flake8_report.txt`](reports/before/flake8_report.txt) | [`reports/after/flake8_report.txt`](reports/after/flake8_report.txt) |
++| Tests | — | [`reports/after/test_output.txt`](reports/after/test_output.txt) |
++
++The before reports were generated from the unmodified starter file (starter
++commit `aa6e272`) before any change was made. Each `program_output.txt`
++records five runs with different answers to the formula prompt, and each run
++shows its exit code:
++
++1. the default formula;
++2. a custom formula;
++3. invalid syntax;
++4. an unknown name;
++5. a harmless code-injection probe.
++
++## Results
++
++| Check | Before | After |
++|---|---|---|
++| Pylint 4.1.3 | **4.69/10**, 26 messages | **10.00/10**, 0 messages |
++| Bandit 1.9.4 | **2 issues**: B307 `eval` (Medium), B110 `try`/`except`/`pass` (Low) | **0 issues** |
++| Flake8 7.4.1 | **12**: F401 ×2, E302 ×7, E305, E712, E722 | **0** |
++| Program, default answer | U003 (invalid data) shortlisted with score 119.0 | U003 skipped with its reasons; U001 99.0 and U005 90.0 shortlisted |
++| Program, injection probe | injected code ran and set U005's score to 100 | formula rejected, default kept |
++| Program, formula `gpa *` | crashed with `SyntaxError` (exit code 1) | formula rejected, run completes (exit code 0) |
++| Program, results file cannot be written | crashed with `PermissionError` (exit code 1) | one-line warning, shortlist printed from memory (exit code 0) |
++| Functional tests | — | **46 run, 46 passed** |
++
++No checks were disabled and the source has no `# noqa`, `# nosec` or
++`# pylint: disable` comments.
++
++## Issues found and fixed
++
++The full table, with tool codes, original line numbers and the fix for each
++finding, is in [`issues.md`](issues.md). In summary:
++
++- **Security (Bandit):**
++  - `eval()` on a formula typed by the user allowed arbitrary code execution
++    (B307). It was replaced by a restricted arithmetic evaluator.
++  - A bare `try`/`except`/`pass` hid every error (B110). It now handles
++    specific exceptions, logs a warning and reports failure.
++- **Bugs found by the tools:**
++  - A mutable default argument `logs=[]` shared one list between calls
++    (W0102).
++  - Files were opened without `with` or an explicit encoding (R1732, W1514).
++- **Bugs found by running the program:**
++  - Invalid applicants such as U003 were shortlisted.
++  - A custom formula applied only to the last applicant.
++  - Invalid formulas crashed the program.
++  - Importing the module ran the interactive demo.
++- **Found in code review (no tool reported it):**
++  - A results file that could not be written, such as a read-only file,
++    crashed the program. The failure is now reported, the old file is not
++    read back, and the shortlist comes from memory.
++- **Code quality and style (Pylint, Flake8):**
++  - `global` statements were removed and the shadowed built-in `credits` was
++    renamed.
++  - The unused import was removed, `== True` was replaced by a truthiness
++    test, `printShortlist` was renamed and an f-string replaced `%`
++    formatting.
++  - Docstrings were added.
++  - PEP 8 blank lines were added around top-level definitions.
++
++## Commits
++
++Lab 5 is four commits: the unmodified starter code, then one fix commit per
++tool.
++
++1. `chore(lab5): add scholarship screener starter and baseline reports` —
++   the original `scholarship_system.py` exactly as supplied (starter commit
++   `aa6e272`), `.gitignore`, the lab handout, `requirements.txt` and the
++   baseline reports in `reports/before/`. Nothing is fixed in this commit.
++2. `fix(security): address Bandit findings` — the safe formula evaluator,
++   specific exception handling, the Bandit report and the security
++   regression tests.
++3. `fix(quality): resolve Pylint findings` — Pylint 10.00/10, input
++   validation, a single formula for all applicants, the `__main__` guard,
++   handling of results-file write errors and 46 tests.
++4. `style: resolve Flake8 findings and finalize Lab 5` — PEP 8 blank lines,
++   the final reports, the documentation, the ignore rule for the class-list
++   PDF (it lists other students' names and SRNs) and the patch files.
++
++### Patch files
++
++`commits/` holds the three fix commits as patch files:
++
++| Patch file | Commit |
++|---|---|
++| `0001-fix-bandit-security-findings.patch` | `fix(security): address Bandit findings` |
++| `0002-fix-pylint-quality-findings.patch` | `fix(quality): resolve Pylint findings` |
++| `0003-fix-flake8-style-findings.patch` | `style: resolve Flake8 findings and finalize Lab 5` |
++
++They were made with `git format-patch --zero-commit`, so each one contains
++the commit message and the full diff, with zeros in place of the commit hash.
++The third patch leaves out the `commits/` folder, because a patch cannot
++contain itself.
++
++To replay them, apply them in order from the repository root on a copy of the
++first Lab 5 commit (find its hash with `git log --oneline`):
++
++```powershell
++git worktree add ..\lab5-replay <hash of the first Lab 5 commit>
++cd ..\lab5-replay
++git apply --index ..\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\commits\0001-fix-bandit-security-findings.patch
++git apply --index ..\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\commits\0002-fix-pylint-quality-findings.patch
++git apply --index ..\PES1UG24CS316_SE_LABS\Lab-5_Static_Code_Analysis\commits\0003-fix-flake8-style-findings.patch
++```
++
++The result matches the final commit apart from the `commits/` folder.
+diff --git a/Lab-5_Static_Code_Analysis/issues.md b/Lab-5_Static_Code_Analysis/issues.md
+new file mode 100644
+index 0000000..536bb11
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/issues.md
+@@ -0,0 +1,67 @@
++# Lab 5 — Issue Table
++
++**Name:** Paras Agarwal  
++**SRN:** PES1UG24CS316  
++**File analysed:** `scholarship_system.py` (Student Scholarship Eligibility Screener)
++
++Line numbers refer to the **original** starter file, exactly as reported in
++[`reports/before/`](reports/before/). Tools: Pylint 4.1.3, Bandit 1.9.4 and
++Flake8 7.4.1 on Python 3.13.7. Rows 1–15 are ordered by severity: security
++first, then bugs, then code quality and style. Row 16 was found in code
++review and is listed last.
++
++**Types:** *Security* — exploitable weakness. *Bug* — wrong or fragile
++behaviour. *Quality* — maintainability problem. *Style* — PEP 8 and naming.
++Rows marked *found by running the program*, *found while writing the tests*
++or *found in code review* were not reported by any tool.
++
++| Issue | Type | Line(s) | Description | Fix Approach |
++|---|---|---|---|---|
++| 1. Arbitrary code execution through `eval()` — Bandit **B307** (severity Medium, confidence High, CWE-78), Pylint **W0123** eval-used, Pylint **W0613** ×2 unused-argument | Security | 12 (eval); 11; 24–26 and 51–53 (formula comes from `input()`) | `calculate_merit_score()` returned `eval(MERIT_FORMULA)`, and `main()` stored whatever was typed at the prompt as the formula, so any Python expression ran with the program's permissions. Confirmed on the original: the probe `__import__("builtins").print(...) or 100` printed its message and set U005's score to 100 (run 5 in `reports/before/program_output.txt`). Malformed formulas such as `gpa *` and `income * 2` crashed the program with a traceback (runs 3–4). The W0613 warnings appeared because `gpa` and `credits` were only used inside the eval string. | Replaced `eval()` with a small AST interpreter. `parse_formula()` parses with `ast.parse(mode="eval")` and allows only the names `gpa` and `credits`, finite int/float constants, `+ - * /`, unary `+ -` and parentheses, with at most 100 characters and 50 syntax nodes. `_evaluate()` walks the checked tree. Division by zero and non-finite results raise `ValueError`. `change_formula()` validates before storing, the stored formula is checked again at every evaluation, and `main()` reports a rejected formula and keeps the current one. |
++| 2. `try`/`except`/`pass` swallowing every error — Bandit **B110** (severity Low, confidence High, CWE-703), Pylint **W0702** bare-except, Flake8 **E722** | Security | 35–38 | `load_results()` wrapped the read in a bare `except: pass`, which silently hid a missing file, a permission error, corrupt JSON and even programming errors or `KeyboardInterrupt`. The caller could not tell whether loading worked. | Catch only `FileNotFoundError` and `(OSError, UnicodeDecodeError, json.JSONDecodeError)`, log a warning and return `False`, or return `True` on success. The in-memory results are left unchanged when loading fails. A file whose JSON does not have the expected structure is also rejected. |
++| 3. Mutable default argument — Pylint **W0102** dangerous-default-value | Bug | 14 (used at 21) | `logs=[]` is created once, when the function is defined, so every call that did not pass `logs` appended to the same hidden list. It grew for as long as the program ran, sharing state between calls. | Default changed to `logs=None`. An entry is appended only to a list that the caller passes. A regression test checks that `__defaults__` is still `(None,)` after repeated calls and that separate lists stay separate. |
++| 4. Invalid applicant data accepted and shortlisted — *found by running the program* | Bug | 14–22; data at 49 | There was no input validation. U003 (GPA 12.5 on a 10-point scale, credits −3, income −1) scored 119.0, the highest score, and was shortlisted (run 1 in `reports/before/program_output.txt`). Strings, `None`, booleans, NaN and infinity were also accepted or failed later. | `_validate_scores()` requires a finite `gpa` between 0 and 10. `credits` and `income` still default to 0, as in the original, but must be finite and not negative. Booleans are rejected, and all problems are reported in one `ValueError`. `student_id` must be a non-empty string. Nothing is recorded for invalid data, and `main()` prints `Skipped <id>: <reason>`. U003 is kept in the demo to show the check working. |
++| 5. Formula prompt in the middle of the batch — *found by running the program* | Bug | 47–54 | U001–U004 were scored before the formula prompt, so a custom formula applied only to U005. With `gpa * 10 + credits * 3`, U001 kept 99.0 from the default formula while U005 got 93.0 from the new one: one shortlist, two formulas (run 2 in `reports/before/program_output.txt`). | The prompt now comes first, then every applicant is scored in one loop with the same formula. An error for one applicant is reported and the run continues. Final run 2 gives U001 103.0 and U005 93.0. |
++| 6. Files opened without `with` and without an encoding — Pylint **R1732** consider-using-with ×2, **W1514** unspecified-encoding ×2 | Bug | 29–31, 36 | `persist_results()` closed its file by hand, so the handle leaked if writing failed, and `load_results()` never closed the file it opened. Without `encoding=`, the platform default (cp1252 on Windows) is used, so non-ASCII text in the JSON file could be misread. | `with open(file, "w", encoding="utf-8")` with `json.dump()`, and `with open(file, encoding="utf-8")` with `json.load()`. A test loads a UTF-8 results file whose applicant id contains "ë". |
++| 7. `global` statements rebinding module state — Pylint **W0603** global-statement ×2 | Quality | 25, 34 | `change_formula()` and `load_results()` rebound module globals. Rebinding `results` also left any other reference to the old dict (for example `from scholarship_system import results`) holding stale data. | The active formula lives in a `settings` dict that is changed in place, and `load_results()` updates `results` with `clear()` and `update()`. A test checks that the same dict object is kept. |
++| 8. Interactive demo runs on import — *found while writing the tests* | Bug | 59 | `main()` was called at module level, so `import scholarship_system` prompted for input, scored the demo applicants and wrote `scholarships.json`. | Added an `if __name__ == "__main__":` guard. A test imports the module in a fresh interpreter and checks that there is no output and no file. |
++| 9. Built-in name `credits` shadowed — Pylint **W0622** redefined-builtin ×2 | Quality | 11, 16 | The parameter and a local variable hid the built-in `credits` object, which is confusing and error-prone. | Renamed to `extra_credits` in the Python code. Formulas still use the documented variable name `credits`. |
++| 10. Unused imports — Pylint **W0611** ×2, Flake8 **F401** ×2 | Style | 2, 3 | `math` and `sys` were imported but never used. | `sys` was removed. `math` is now used by the safe evaluator (`math.isfinite`), so it is no longer unused. |
++| 11. Comparison to `True` — Pylint **C0121** singleton-comparison, Flake8 **E712** | Style | 43 | `results[r]["eligible"] == True` compares against a singleton instead of testing the value. | `if record["eligible"]:`. The value is always a bool, which is checked when results are loaded. |
++| 12. Function name not in snake_case — Pylint **C0103** invalid-name | Style | 40–44 | `printShortlist` does not follow the snake_case naming convention. The loop also looked each record up again by key. | Renamed to `print_shortlist` and the loop now iterates over `results.items()`. The printed format is unchanged. |
++| 13. Old-style `%` string formatting — Pylint **C0209** consider-using-f-string | Style | 21 | `"%s scored %s" % (student_id, score)` is harder to read than an f-string. | Replaced with `f"{student_id} scored {score}"`. |
++| 14. Missing docstrings — Pylint **C0114** ×1, **C0116** ×7 | Style | 1, 11, 14, 24, 28, 33, 40, 46 | The module and all seven functions had no docstrings. | Added a module docstring and a docstring for every function, including the new helpers. |
++| 15. Missing blank lines around top-level definitions — Flake8 **E302** ×7, **E305** ×1 | Style | 11, 14, 24, 28, 33, 40, 46 (E302); 59 (E305) | PEP 8 requires two blank lines around top-level functions, and the file used one. The final file has 13 functions, so the Flake8 run just before the style fix reported E302 ×13 and E305 ×1. | Added the second blank line before every top-level definition and before the `__main__` guard. In the style commit, the only change to `scholarship_system.py` is these blank lines. |
++| 16. Results-file write errors crashed the program — *found in code review* | Bug | 28–31; 55–56 | `persist_results()` let every `OSError` escape, so a read-only `scholarships.json` or an invalid path stopped the program with a traceback before the shortlist was printed. Confirmed on the original with a folder named `scholarships.json` (`PermissionError`, exit code 1); the code after the security commit behaved the same. Catching the error alone would not be enough, because `main()` then called `load_results()`, which could read an older file and print its shortlist as this run's. | `persist_results()` catches `OSError`, logs `Could not save results to <file>: <error>` and returns `False`, or `True` once the file is written, and leaves the in-memory results untouched. `main()` reads the file back only after a successful save; otherwise it prints the shortlist from memory. Tests cover a missing folder, a folder in place of the file, a simulated permission error, a simulated full disk, a simulated read-only older file and a full program run that cannot save. |
++
++## Results before and after
++
++| Check | Before (original starter code) | After (final code) |
++|---|---|---|
++| Pylint | **4.69/10**, 26 messages (13 warning, 2 refactor, 11 convention) | **10.00/10**, 0 messages |
++| Bandit | **2 issues**: B307 (Medium), B110 (Low) | **No issues identified** |
++| Flake8 | **12**: F401 ×2, E302 ×7, E305, E712, E722 | **0** (the report file is empty) |
++| Program, default answer | U001 99.0, **U003 119.0** and U005 90.0 shortlisted | U003 skipped with its reasons; U001 99.0 and U005 90.0 shortlisted |
++| Program, injection probe | injected code ran and set U005's score to 100 | formula rejected, default kept |
++| Program, formula `gpa *` | crashed with `SyntaxError` (exit code 1) | formula rejected, run completes (exit code 0) |
++| Program, results file cannot be written | crashed with `PermissionError` (exit code 1) | one-line warning, shortlist printed from memory (exit code 0) |
++| Functional tests | — | 46 run, 46 passed (`reports/after/test_output.txt`) |
++
++All 26 Pylint messages, both Bandit issues and all 12 Flake8 diagnostics from
++the baseline are resolved, as confirmed by the reports in
++[`reports/after/`](reports/after/). No checks were disabled and the source
++has no `# noqa`, `# nosec` or `# pylint: disable` comments. Some findings were
++reported by more than one tool (the bare `except` by all three), so they are
++grouped into single rows above.
++
++## Fixes by commit
++
++1. `chore(lab5): add scholarship screener starter and baseline reports` — no
++   fixes: the original starter code and the baseline reports.
++2. `fix(security): address Bandit findings` — rows 1 and 2.
++3. `fix(quality): resolve Pylint findings` — rows 3 to 14 and row 16, plus the
++   stricter results-file check from row 2.
++4. `style: resolve Flake8 findings and finalize Lab 5` — row 15, plus the final
++   reports and documentation.
++
++Commits 2 to 4 are also saved as patch files in [`commits/`](commits/).
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+index aaa7bb3..c9482e6 100644
+--- a/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
++++ b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+@@ -1,4 +1,4 @@
+-﻿Run started:2026-10-28 14:12:22.508712+00:00
++﻿Run started:2026-10-28 14:13:47.439712+00:00
+ 
+ Test results:
+ 	No issues identified.
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/flake8_report.txt b/Lab-5_Static_Code_Analysis/reports/after/flake8_report.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/program_output.txt b/Lab-5_Static_Code_Analysis/reports/after/program_output.txt
+new file mode 100644
+index 0000000..60c585e
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/reports/after/program_output.txt
+@@ -0,0 +1,64 @@
++Scholarship screener - program output AFTER fixes (final scholarship_system.py)
++Command : .\.venv\Scripts\python.exe scholarship_system.py  (working directory: Lab-5_Static_Code_Analysis)
++Python  : 3.13.7
++Each run answers the program's single 'Merit formula' prompt with
++the input shown. The answer is piped, so it is not echoed after the
++prompt. stdout and stderr are captured together, in order.
++
++========================================================================
++Run 1 - default formula
++Input: <Enter> (empty line)
++------------------------------------------------------------------------
++Merit formula (Enter to keep default): Skipped U003: gpa must be between 0 and 10 (got 12.5); credits must be 0 or more (got -3); income must be 0 or more (got -1)
++Shortlisted applicants:
++  U001 score = 99.0
++  U005 score = 90.0
++------------------------------------------------------------------------
++Exit code: 0
++
++========================================================================
++Run 2 - custom valid formula
++Input: gpa * 10 + credits * 3
++------------------------------------------------------------------------
++Merit formula (Enter to keep default): Skipped U003: gpa must be between 0 and 10 (got 12.5); credits must be 0 or more (got -3); income must be 0 or more (got -1)
++Shortlisted applicants:
++  U001 score = 103.0
++  U005 score = 93.0
++------------------------------------------------------------------------
++Exit code: 0
++
++========================================================================
++Run 3 - syntactically invalid formula
++Input: gpa *
++------------------------------------------------------------------------
++Merit formula (Enter to keep default): Formula rejected: merit formula is not valid syntax (invalid syntax). Keeping 'gpa * 10 + credits * 2'.
++Skipped U003: gpa must be between 0 and 10 (got 12.5); credits must be 0 or more (got -3); income must be 0 or more (got -1)
++Shortlisted applicants:
++  U001 score = 99.0
++  U005 score = 90.0
++------------------------------------------------------------------------
++Exit code: 0
++
++========================================================================
++Run 4 - formula using an unknown name
++Input: income * 2
++------------------------------------------------------------------------
++Merit formula (Enter to keep default): Formula rejected: unknown name 'income' in merit formula (allowed: gpa, credits). Keeping 'gpa * 10 + credits * 2'.
++Skipped U003: gpa must be between 0 and 10 (got 12.5); credits must be 0 or more (got -3); income must be 0 or more (got -1)
++Shortlisted applicants:
++  U001 score = 99.0
++  U005 score = 90.0
++------------------------------------------------------------------------
++Exit code: 0
++
++========================================================================
++Run 5 - code-injection probe (harmless payload: prints one line)
++Input: __import__("builtins").print("[!] arbitrary code executed via eval") or 100
++------------------------------------------------------------------------
++Merit formula (Enter to keep default): Formula rejected: BoolOp is not allowed in a merit formula. Keeping 'gpa * 10 + credits * 2'.
++Skipped U003: gpa must be between 0 and 10 (got 12.5); credits must be 0 or more (got -3); income must be 0 or more (got -1)
++Shortlisted applicants:
++  U001 score = 99.0
++  U005 score = 90.0
++------------------------------------------------------------------------
++Exit code: 0
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/test_output.txt b/Lab-5_Static_Code_Analysis/reports/after/test_output.txt
+new file mode 100644
+index 0000000..d703724
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/reports/after/test_output.txt
+@@ -0,0 +1,51 @@
++test_applicant_at_or_above_income_limit (test_scholarship_system.EligibilityTests.test_applicant_at_or_above_income_limit) ... ok
++test_applicant_below_merit_cutoff (test_scholarship_system.EligibilityTests.test_applicant_below_merit_cutoff) ... ok
++test_boundary_values_are_accepted (test_scholarship_system.EligibilityTests.test_boundary_values_are_accepted) ... ok
++test_eligible_applicant (test_scholarship_system.EligibilityTests.test_eligible_applicant) ... ok
++test_invalid_sample_applicant_u003_is_rejected (test_scholarship_system.EligibilityTests.test_invalid_sample_applicant_u003_is_rejected) ... ok
++test_invalid_student_ids_are_rejected (test_scholarship_system.EligibilityTests.test_invalid_student_ids_are_rejected) ... ok
++test_invalid_values_are_rejected (test_scholarship_system.EligibilityTests.test_invalid_values_are_rejected) ... ok
++test_log_entry_is_added_to_a_given_list (test_scholarship_system.EligibilityTests.test_log_entry_is_added_to_a_given_list) ... ok
++test_missing_credits_and_income_default_to_zero (test_scholarship_system.EligibilityTests.test_missing_credits_and_income_default_to_zero) ... ok
++test_repeated_calls_do_not_share_state (test_scholarship_system.EligibilityTests.test_repeated_calls_do_not_share_state) ... ok
++test_score_equal_to_cutoff_is_eligible (test_scholarship_system.EligibilityTests.test_score_equal_to_cutoff_is_eligible) ... ok
++test_default_formula_scores_are_unchanged (test_scholarship_system.FormulaSecurityTests.test_default_formula_scores_are_unchanged) ... ok
++test_injected_code_is_not_executed (test_scholarship_system.FormulaSecurityTests.test_injected_code_is_not_executed) ... ok
++test_invalid_formulas_are_rejected_without_crashing (test_scholarship_system.FormulaSecurityTests.test_invalid_formulas_are_rejected_without_crashing) ... ok
++test_valid_custom_formula_is_still_supported (test_scholarship_system.FormulaSecurityTests.test_valid_custom_formula_is_still_supported) ... ok
++test_default_formula (test_scholarship_system.MeritScoreTests.test_default_formula) ... ok
++test_division_by_zero_is_rejected (test_scholarship_system.MeritScoreTests.test_division_by_zero_is_rejected) ... ok
++test_formula_is_checked_again_when_scoring (test_scholarship_system.MeritScoreTests.test_formula_is_checked_again_when_scoring) ... ok
++test_malformed_empty_and_oversized_formulas_are_rejected (test_scholarship_system.MeritScoreTests.test_malformed_empty_and_oversized_formulas_are_rejected) ... ok
++test_malicious_formulas_are_rejected (test_scholarship_system.MeritScoreTests.test_malicious_formulas_are_rejected) ... ok
++test_non_finite_scores_are_rejected (test_scholarship_system.MeritScoreTests.test_non_finite_scores_are_rejected) ... ok
++test_non_numeric_and_non_finite_constants_are_rejected (test_scholarship_system.MeritScoreTests.test_non_numeric_and_non_finite_constants_are_rejected) ... ok
++test_permitted_custom_formulas (test_scholarship_system.MeritScoreTests.test_permitted_custom_formulas) ... ok
++test_representative_inputs (test_scholarship_system.MeritScoreTests.test_representative_inputs) ... ok
++test_unknown_variables_are_rejected (test_scholarship_system.MeritScoreTests.test_unknown_variables_are_rejected) ... ok
++test_unsupported_operations_are_rejected (test_scholarship_system.MeritScoreTests.test_unsupported_operations_are_rejected) ... ok
++test_error_while_writing_is_reported (test_scholarship_system.PersistenceTests.test_error_while_writing_is_reported) ... ok
++test_load_reads_utf8 (test_scholarship_system.PersistenceTests.test_load_reads_utf8) ... ok
++test_load_replaces_the_current_results_in_place (test_scholarship_system.PersistenceTests.test_load_replaces_the_current_results_in_place) ... ok
++test_load_restores_saved_results (test_scholarship_system.PersistenceTests.test_load_restores_saved_results) ... ok
++test_malformed_json_keeps_current_results (test_scholarship_system.PersistenceTests.test_malformed_json_keeps_current_results) ... ok
++test_missing_file_keeps_current_results (test_scholarship_system.PersistenceTests.test_missing_file_keeps_current_results) ... ok
++test_permission_error_is_reported (test_scholarship_system.PersistenceTests.test_permission_error_is_reported) ... ok
++test_save_writes_json_to_the_given_path (test_scholarship_system.PersistenceTests.test_save_writes_json_to_the_given_path) ... ok
++test_unexpected_structure_keeps_current_results (test_scholarship_system.PersistenceTests.test_unexpected_structure_keeps_current_results) ... ok
++test_unreadable_file_keeps_current_results (test_scholarship_system.PersistenceTests.test_unreadable_file_keeps_current_results) ... ok
++test_unwritable_path_keeps_current_results (test_scholarship_system.PersistenceTests.test_unwritable_path_keeps_current_results) ... ok
++test_custom_formula_applies_to_every_applicant (test_scholarship_system.ProgramTests.test_custom_formula_applies_to_every_applicant) ... ok
++test_demonstration_with_default_formula (test_scholarship_system.ProgramTests.test_demonstration_with_default_formula) ... ok
++test_failed_save_does_not_reload_an_older_file (test_scholarship_system.ProgramTests.test_failed_save_does_not_reload_an_older_file) ... ok
++test_import_does_not_run_the_demonstration (test_scholarship_system.ProgramTests.test_import_does_not_run_the_demonstration) ... ok
++test_rejected_formula_keeps_the_default (test_scholarship_system.ProgramTests.test_rejected_formula_keeps_the_default) ... ok
++test_unwritable_results_file_does_not_crash_the_program (test_scholarship_system.ProgramTests.test_unwritable_results_file_does_not_crash_the_program) ... ok
++test_empty_shortlist (test_scholarship_system.ShortlistTests.test_empty_shortlist) ... ok
++test_includes_eligible_and_excludes_ineligible (test_scholarship_system.ShortlistTests.test_includes_eligible_and_excludes_ineligible) ... ok
++test_score_display_follows_the_active_formula (test_scholarship_system.ShortlistTests.test_score_display_follows_the_active_formula) ... ok
++
++----------------------------------------------------------------------
++Ran 46 tests in 1.837s
++
++OK
+diff --git a/Lab-5_Static_Code_Analysis/scholarship_system.py b/Lab-5_Static_Code_Analysis/scholarship_system.py
+index e84c58b..0dc9b84 100644
+--- a/Lab-5_Static_Code_Analysis/scholarship_system.py
++++ b/Lab-5_Static_Code_Analysis/scholarship_system.py
+@@ -42,6 +42,7 @@ _UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+ _ALLOWED_NODES = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Name, ast.Load,
+                   ast.Constant, *_BINARY_OPERATORS, *_UNARY_OPERATORS)
+ 
++
+ def _is_finite_number(value):
+     """Return True for an int or a finite float (bools are rejected)."""
+     if isinstance(value, bool):
+@@ -50,6 +51,7 @@ def _is_finite_number(value):
+         return True
+     return isinstance(value, float) and math.isfinite(value)
+ 
++
+ def _check_formula_node(node):
+     """Raise ValueError unless *node* may appear in a merit formula."""
+     if not isinstance(node, _ALLOWED_NODES):
+@@ -62,6 +64,7 @@ def _check_formula_node(node):
+         raise ValueError(
+             f"constant {node.value!r} is not allowed in a merit formula")
+ 
++
+ def parse_formula(formula):
+     """Check that *formula* is safe arithmetic and return its syntax tree.
+ 
+@@ -91,6 +94,7 @@ def parse_formula(formula):
+         _check_formula_node(node)
+     return tree
+ 
++
+ def _evaluate(node, variables):
+     """Evaluate a formula syntax tree that parse_formula() has checked."""
+     if isinstance(node, ast.Expression):
+@@ -109,6 +113,7 @@ def _evaluate(node, variables):
+     raise ValueError(
+         f"{type(node).__name__} is not allowed in a merit formula")
+ 
++
+ def calculate_merit_score(gpa, extra_credits):
+     """Return the merit score for a GPA and extracurricular credits.
+ 
+@@ -126,6 +131,7 @@ def calculate_merit_score(gpa, extra_credits):
+         raise ValueError(f"merit formula gave a non-finite score ({score})")
+     return score
+ 
++
+ def _validate_scores(test_scores):
+     """Return (gpa, extra_credits, income) from an applicant's test scores.
+ 
+@@ -152,6 +158,7 @@ def _validate_scores(test_scores):
+         raise ValueError("; ".join(problems))
+     return gpa, extra_credits, income
+ 
++
+ def evaluate_applicant(student_id, test_scores, logs=None):
+     """Score one applicant, record the result and return their eligibility.
+ 
+@@ -172,6 +179,7 @@ def evaluate_applicant(student_id, test_scores, logs=None):
+         logs.append(f"{student_id} scored {score}")
+     return eligible
+ 
++
+ def change_formula(new_formula):
+     """Make new_formula the active merit formula if it is safe arithmetic.
+ 
+@@ -180,6 +188,7 @@ def change_formula(new_formula):
+     parse_formula(new_formula)
+     settings["merit_formula"] = new_formula.strip()
+ 
++
+ def persist_results(file=RESULTS_FILE):
+     """Save the current results to a UTF-8 JSON file.
+ 
+@@ -195,6 +204,7 @@ def persist_results(file=RESULTS_FILE):
+         return False
+     return True
+ 
++
+ def _is_valid_results(data):
+     """Return True if data has the shape that persist_results() writes."""
+     return isinstance(data, dict) and all(
+@@ -203,6 +213,7 @@ def _is_valid_results(data):
+         and isinstance(record.get("eligible"), bool)
+         for record in data.values())
+ 
++
+ def load_results(file=RESULTS_FILE):
+     """Replace the in-memory results with those saved in a JSON file.
+ 
+@@ -226,6 +237,7 @@ def load_results(file=RESULTS_FILE):
+     results.update(loaded)
+     return True
+ 
++
+ def print_shortlist():
+     """Print the id and merit score of every eligible applicant."""
+     print("Shortlisted applicants:")
+@@ -233,6 +245,7 @@ def print_shortlist():
+         if record["eligible"]:
+             print(" ", student_id, "score =", record["score"])
+ 
++
+ def main():
+     """Ask for a merit formula, then screen, save and shortlist applicants."""
+     formula = input("Merit formula (Enter to keep default): ").strip()
+@@ -261,5 +274,6 @@ def main():
+         load_results()
+     print_shortlist()
+ 
++
+ if __name__ == "__main__":
+     main()
+diff --git a/README.md b/README.md
+index b9a7a91..0ef2b3f 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,74 @@
+ ﻿# PES1UG24CS316 - Software Engineering Labs
++
++**Course:** Software Engineering  
++**SRN:** PES1UG24CS316  
++**Name:** Paras Agarwal
++
++This repository holds my Software Engineering lab work. Each lab has its own
++folder with a README that describes the assignment, the deliverables and the
++results.
++
++## Labs
++
++| Lab | Topic | Folder |
++|---|---|---|
++| Lab 1 | Requirements Engineering & UML Use-Case Modelling | [`Lab-1_Requirements-Engineering/`](Lab-1_Requirements-Engineering/) |
++| Lab 2 | Jira Hands-on: Agile Backlog Creation & Sprint Simulations | [`Lab-2_Jira-Agile-Backlog/`](Lab-2_Jira-Agile-Backlog/) |
++| Lab 3 | Component Modelling & Architectural Pattern Selection | [`Lab-3_Component-Modelling/`](Lab-3_Component-Modelling/) |
++| Lab 4 | Vibe Coding: Maze Chase | [`Lab-4_Vibe-Coding-Maze-Chase/`](Lab-4_Vibe-Coding-Maze-Chase/) |
++| Lab 5 | Static Code Analysis | [`Lab-5_Static_Code_Analysis/`](Lab-5_Static_Code_Analysis/) |
++
++## Lab 1 — Requirements Engineering & UML Use-Case Modelling
++
++Requirements engineering for the Telemedicine Slot Booking & Prescription
++Portal (Problem Statement 11). The deliverables are a requirements table with
++five functional and two non-functional requirements, a UML use-case diagram,
++and a use-case flow specification for *Book Video Consultation Slot*.
++
++Folder: [`Lab-1_Requirements-Engineering/`](Lab-1_Requirements-Engineering/)
++
++## Lab 2 — Jira Hands-on: Agile Backlog Creation & Sprint Simulations
++
++Agile project management in Jira for the telemedicine portal. The work covers
++epics and user stories, story-point estimation, sprint planning, an active
++sprint and a burndown chart, documented with screenshots and a submission PDF.
++
++Folder: [`Lab-2_Jira-Agile-Backlog/`](Lab-2_Jira-Agile-Backlog/)
++
++## Lab 3 — Component Modelling & Architectural Pattern Selection
++
++Architecture selection for the telemedicine portal. A Layered Architecture
++was chosen and modelled as a UML component diagram with provided and required
++interfaces, and a written document justifies the choice.
++
++Folder: [`Lab-3_Component-Modelling/`](Lab-3_Component-Modelling/)
++
++## Lab 4 — Vibe Coding: Maze Chase
++
++LLM-assisted (Claude) development on a Python Maze Chase game. Four features
++were added incrementally: multiple enemies, enemy speed progression, a
++power-pellet freeze and a survival score. The folder also has before and after
++gameplay videos and the chat history.
++
++Folder: [`Lab-4_Vibe-Coding-Maze-Chase/`](Lab-4_Vibe-Coding-Maze-Chase/)
++
++## Lab 5 — Static Code Analysis
++
++A Python static-analysis exercise using **Pylint**, **Bandit** and
++**Flake8** on the Student Scholarship Eligibility Screener
++(`scholarship_system.py`). The purpose is to find and fix security, correctness
++and style problems with these tools, then check the fixes by running the tools
++again.
++
++The folder contains:
++
++- baseline reports for the original code;
++- an issue table;
++- fixes made in three commits (security, code quality, style);
++- functional tests;
++- before and after reports.
++
++Pylint improved from 4.69/10 to 10.00/10, and Bandit and Flake8 findings went
++from 2 and 12 to none.
++
++Folder: [`Lab-5_Static_Code_Analysis/`](Lab-5_Static_Code_Analysis/)
+-- 
+2.55.0.windows.5
+

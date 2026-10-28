@@ -1,0 +1,766 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ParasAgarwal23 <parasagarwal2006@gmail.com>
+Date: Wed, 28 Oct 2026 19:42:46 +0530
+Subject: [PATCH] fix(quality): resolve Pylint findings
+
+Pylint 8.25/10 (after the security fix) -> 10.00/10, without disabling
+any check:
+- W0102: logs=[] default replaced by logs=None (no list shared by calls).
+- W0603: results and the active formula (settings dict) are updated in
+  place instead of being rebound with global statements.
+- R1732/W1514: files are opened with "with" and encoding="utf-8".
+- W0622: the credits parameter/variable no longer shadows the builtin.
+- W0611, C0103, C0121, C0209, C0114/C0116: unused sys import removed,
+  printShortlist renamed to print_shortlist, truthiness test instead of
+  == True, f-string, module and function docstrings.
+
+Defects found by running the program and writing the tests:
+- Applicant data is validated (GPA 0-10; credits and income finite and
+  not negative). U003 (GPA 12.5, negative credits and income) is now
+  reported and skipped instead of being shortlisted with score 119.0.
+- The formula prompt comes before scoring, so one formula is applied to
+  every applicant, and an error for one applicant no longer stops the run.
+- load_results() keeps the current results if the file does not hold
+  valid results.
+- main() only runs under if __name__ == "__main__", so importing the
+  module has no side effects.
+
+Results-file write errors (found in code review, not by a tool):
+- persist_results() catches OSError, logs "Could not save results to
+  <file>: <error>" and returns False, or True once the file is written.
+  The in-memory results are left untouched.
+- main() reads the file back only after a successful save, so an older
+  file cannot replace this run's results; otherwise the shortlist is
+  printed from memory.
+
+Tests extended to 46: formula security, scoring, eligibility and
+validation, persistence including write failures, the shortlist, and
+main() and import behaviour. The Pylint report is added and the Bandit
+report regenerated (no issues). Flake8 still reports E302 x13 and E305 x1;
+they are fixed in the next commit.
+---
+ .../reports/after/bandit_report.txt           |   4 +-
+ .../reports/after/pylint_report.txt           |   4 +
+ .../scholarship_system.py                     | 172 +++++--
+ .../test_scholarship_system.py                | 434 ++++++++++++++++++
+ 4 files changed, 577 insertions(+), 37 deletions(-)
+ create mode 100644 Lab-5_Static_Code_Analysis/reports/after/pylint_report.txt
+
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+index 747812e..aaa7bb3 100644
+--- a/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
++++ b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+@@ -1,10 +1,10 @@
+-﻿Run started:2026-10-28 05:53:14.695109+00:00
++﻿Run started:2026-10-28 14:12:22.508712+00:00
+ 
+ Test results:
+ 	No issues identified.
+ 
+ Code scanned:
+-	Total lines of code: 144
++	Total lines of code: 231
+ 	Total lines skipped (#nosec): 0
+ 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+ 
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/pylint_report.txt b/Lab-5_Static_Code_Analysis/reports/after/pylint_report.txt
+new file mode 100644
+index 0000000..c747043
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/reports/after/pylint_report.txt
+@@ -0,0 +1,4 @@
++﻿
++------------------------------------
++Your code has been rated at 10.00/10
++
+diff --git a/Lab-5_Static_Code_Analysis/scholarship_system.py b/Lab-5_Static_Code_Analysis/scholarship_system.py
+index 5ff0f01..e84c58b 100644
+--- a/Lab-5_Static_Code_Analysis/scholarship_system.py
++++ b/Lab-5_Static_Code_Analysis/scholarship_system.py
+@@ -1,17 +1,31 @@
++"""Student Scholarship Eligibility Screener.
++
++Scores applicants from GPA and extracurricular credits, shortlists those
++whose merit score reaches CUTOFF and whose family income is below
++INCOME_LIMIT, and saves the results to a JSON file.
++
++The merit formula can be changed at run time. Formulas are untrusted text,
++so they are checked and evaluated by a small arithmetic-only interpreter
++instead of eval().
++"""
++
+ import ast
+ import json
+ import logging
+ import math
+ import operator
+-import sys
+ 
+ LOGGER = logging.getLogger(__name__)
+ 
+-# Global state
+-results = {}
+-MERIT_FORMULA = "gpa * 10 + credits * 2"
++DEFAULT_MERIT_FORMULA = "gpa * 10 + credits * 2"
+ INCOME_LIMIT = 800000
+ CUTOFF = 85
++MAX_GPA = 10
++RESULTS_FILE = "scholarships.json"
++
++# Global state, updated in place: applicant results and the active formula.
++results = {}
++settings = {"merit_formula": DEFAULT_MERIT_FORMULA}
+ 
+ # Merit formulas are untrusted text (main() reads one from input), so they are
+ # checked and evaluated by a small arithmetic-only interpreter, never eval().
+@@ -95,10 +109,16 @@ def _evaluate(node, variables):
+     raise ValueError(
+         f"{type(node).__name__} is not allowed in a merit formula")
+ 
+-def calculate_merit_score(gpa, credits):
+-    tree = parse_formula(MERIT_FORMULA)
++def calculate_merit_score(gpa, extra_credits):
++    """Return the merit score for a GPA and extracurricular credits.
++
++    The active formula sees them as the variables gpa and credits. Raises
++    ValueError if the formula is unsafe, divides by zero or does not give a
++    finite score.
++    """
++    tree = parse_formula(settings["merit_formula"])
+     try:
+-        score = _evaluate(tree, {"gpa": gpa, "credits": credits})
++        score = _evaluate(tree, {"gpa": gpa, "credits": extra_credits})
+     except (ZeroDivisionError, OverflowError) as error:
+         raise ValueError(
+             f"merit formula cannot be evaluated: {error}") from error
+@@ -106,58 +126,140 @@ def calculate_merit_score(gpa, credits):
+         raise ValueError(f"merit formula gave a non-finite score ({score})")
+     return score
+ 
+-def evaluate_applicant(student_id, test_scores, logs=[]):
++def _validate_scores(test_scores):
++    """Return (gpa, extra_credits, income) from an applicant's test scores.
++
++    gpa is required and must be between 0 and MAX_GPA; credits and income
++    default to 0 and must not be negative. Every value must be a finite
++    number. Raises ValueError listing all the problems found.
++    """
++    if "gpa" not in test_scores:
++        raise ValueError("gpa is required")
+     gpa = test_scores["gpa"]
+-    credits = test_scores.get("credits", 0)
++    extra_credits = test_scores.get("credits", 0)
+     income = test_scores.get("income", 0)
+-    score = calculate_merit_score(gpa, credits)
++    problems = []
++    for name, value, maximum in (("gpa", gpa, MAX_GPA),
++                                 ("credits", extra_credits, None),
++                                 ("income", income, None)):
++        if not _is_finite_number(value):
++            problems.append(f"{name} must be a finite number (got {value!r})")
++        elif value < 0 or (maximum is not None and value > maximum):
++            limit = (f"between 0 and {maximum}" if maximum is not None
++                     else "0 or more")
++            problems.append(f"{name} must be {limit} (got {value!r})")
++    if problems:
++        raise ValueError("; ".join(problems))
++    return gpa, extra_credits, income
++
++def evaluate_applicant(student_id, test_scores, logs=None):
++    """Score one applicant, record the result and return their eligibility.
++
++    test_scores holds "gpa" and optionally "credits" and "income" (see
++    _validate_scores). An applicant is eligible when the merit score is at
++    least CUTOFF and income is below INCOME_LIMIT. Invalid data raises
++    ValueError and nothing is recorded. If a logs list is passed, a
++    "<id> scored <score>" entry is appended to it.
++    """
++    if not isinstance(student_id, str) or not student_id.strip():
++        raise ValueError(
++            f"student id must be a non-empty string (got {student_id!r})")
++    gpa, extra_credits, income = _validate_scores(test_scores)
++    score = calculate_merit_score(gpa, extra_credits)
+     eligible = score >= CUTOFF and income < INCOME_LIMIT
+     results[student_id] = {"score": score, "eligible": eligible}
+-    logs.append("%s scored %s" % (student_id, score))
++    if logs is not None:
++        logs.append(f"{student_id} scored {score}")
+     return eligible
+ 
+ def change_formula(new_formula):
+-    global MERIT_FORMULA
++    """Make new_formula the active merit formula if it is safe arithmetic.
++
++    Raises ValueError, keeping the current formula, if it is not.
++    """
+     parse_formula(new_formula)
+-    MERIT_FORMULA = new_formula.strip()
++    settings["merit_formula"] = new_formula.strip()
+ 
+-def persist_results(file="scholarships.json"):
+-    f = open(file, "w")
+-    f.write(json.dumps(results))
+-    f.close()
++def persist_results(file=RESULTS_FILE):
++    """Save the current results to a UTF-8 JSON file.
+ 
+-def load_results(file="scholarships.json"):
+-    global results
++    Returns True on success. If the file cannot be written (for example, it
++    is read-only or its folder does not exist), a warning is logged, the
++    in-memory results are kept and False is returned.
++    """
+     try:
+-        results = json.loads(open(file).read())
++        with open(file, "w", encoding="utf-8") as handle:
++            json.dump(results, handle)
++    except OSError as error:
++        LOGGER.warning("Could not save results to %s: %s", file, error)
++        return False
++    return True
++
++def _is_valid_results(data):
++    """Return True if data has the shape that persist_results() writes."""
++    return isinstance(data, dict) and all(
++        isinstance(record, dict)
++        and _is_finite_number(record.get("score"))
++        and isinstance(record.get("eligible"), bool)
++        for record in data.values())
++
++def load_results(file=RESULTS_FILE):
++    """Replace the in-memory results with those saved in a JSON file.
++
++    Returns True on success. If the file is missing, unreadable or does not
++    hold valid results, a warning is logged, the in-memory results are kept
++    unchanged and False is returned.
++    """
++    try:
++        with open(file, encoding="utf-8") as handle:
++            loaded = json.load(handle)
+     except FileNotFoundError:
+         LOGGER.warning("No saved results found at %s", file)
+         return False
+     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+         LOGGER.warning("Could not load results from %s: %s", file, error)
+         return False
++    if not _is_valid_results(loaded):
++        LOGGER.warning("Ignoring %s: it does not contain valid results", file)
++        return False
++    results.clear()
++    results.update(loaded)
+     return True
+ 
+-def printShortlist():
++def print_shortlist():
++    """Print the id and merit score of every eligible applicant."""
+     print("Shortlisted applicants:")
+-    for r in results:
+-        if results[r]["eligible"] == True:
+-            print(" ", r, "score =", results[r]["score"])
++    for student_id, record in results.items():
++        if record["eligible"]:
++            print(" ", student_id, "score =", record["score"])
+ 
+ def main():
+-    evaluate_applicant("U001", {"gpa": 9.1, "credits": 4, "income": 450000})
+-    evaluate_applicant("U002", {"gpa": 7.2, "credits": 1, "income": 300000})
+-    evaluate_applicant("U003", {"gpa": 12.5, "credits": -3, "income": -1})
+-    evaluate_applicant("U004", {"gpa": 6.5})
+-    formula = input("Merit formula (Enter to keep default): ")
++    """Ask for a merit formula, then screen, save and shortlist applicants."""
++    formula = input("Merit formula (Enter to keep default): ").strip()
+     if formula:
+         try:
+             change_formula(formula)
+         except ValueError as error:
+-            print(f"Formula rejected: {error}. Keeping {MERIT_FORMULA!r}.")
+-    evaluate_applicant("U005", {"gpa": 8.4, "credits": 3, "income": 600000})
+-    persist_results()
+-    load_results()
+-    printShortlist()
++            print(f"Formula rejected: {error}. "
++                  f"Keeping {settings['merit_formula']!r}.")
++    applicants = [
++        ("U001", {"gpa": 9.1, "credits": 4, "income": 450000}),
++        ("U002", {"gpa": 7.2, "credits": 1, "income": 300000}),
++        # Invalid sample kept to show validation (GPA > 10, negative values).
++        ("U003", {"gpa": 12.5, "credits": -3, "income": -1}),
++        ("U004", {"gpa": 6.5}),
++        ("U005", {"gpa": 8.4, "credits": 3, "income": 600000}),
++    ]
++    for student_id, test_scores in applicants:
++        try:
++            evaluate_applicant(student_id, test_scores)
++        except ValueError as error:
++            print(f"Skipped {student_id}: {error}")
++    # Read the file back only if this run's results were saved; otherwise an
++    # older file would replace them. The shortlist then comes from memory.
++    if persist_results():
++        load_results()
++    print_shortlist()
+ 
+-main()
++if __name__ == "__main__":
++    main()
+diff --git a/Lab-5_Static_Code_Analysis/test_scholarship_system.py b/Lab-5_Static_Code_Analysis/test_scholarship_system.py
+index 00d5da3..6cc070b 100644
+--- a/Lab-5_Static_Code_Analysis/test_scholarship_system.py
++++ b/Lab-5_Static_Code_Analysis/test_scholarship_system.py
+@@ -3,14 +3,23 @@
+ Run from the Lab-5_Static_Code_Analysis directory:  python -m unittest -v
+ """
+ 
++import contextlib
++import io
++import json
+ import os
+ import subprocess
+ import sys
+ import tempfile
+ import unittest
++from unittest import mock
++
++import scholarship_system as screener
+ 
+ HERE = os.path.dirname(os.path.abspath(__file__))
+ PROGRAM = os.path.join(HERE, "scholarship_system.py")
++U001 = {"gpa": 9.1, "credits": 4, "income": 450000}   # score 99.0, eligible
++U002 = {"gpa": 7.2, "credits": 1, "income": 300000}   # score 74.0, too low
++U005 = {"gpa": 8.4, "credits": 3, "income": 600000}   # score 90.0, eligible
+ 
+ 
+ def run_program(answer, cwd):
+@@ -61,5 +70,430 @@ class FormulaSecurityTests(unittest.TestCase):
+         self.assertIn("U005 score = 93.0", result.stdout)
+ 
+ 
++class ScreenerTestCase(unittest.TestCase):
++    """Base class: each test starts with no results and the default formula."""
++
++    def setUp(self):
++        self.reset_screener()
++        self.addCleanup(self.reset_screener)
++
++    @staticmethod
++    def reset_screener():
++        """Clear the results and restore the default merit formula."""
++        screener.results.clear()
++        screener.settings["merit_formula"] = screener.DEFAULT_MERIT_FORMULA
++
++    def make_temp_dir(self):
++        """Create a temporary directory that is removed after the test."""
++        scratch = tempfile.TemporaryDirectory()
++        self.addCleanup(scratch.cleanup)
++        return scratch.name
++
++
++class MeritScoreTests(ScreenerTestCase):
++    """calculate_merit_score(), change_formula() and the formula checks."""
++
++    def test_default_formula(self):
++        self.assertEqual(screener.settings["merit_formula"],
++                         "gpa * 10 + credits * 2")
++        self.assertAlmostEqual(screener.calculate_merit_score(9.1, 4), 99.0)
++
++    def test_representative_inputs(self):
++        cases = [(8.4, 3, 90.0), (7.2, 1, 74.0), (6.5, 0, 65.0),
++                 (10, 0, 100.0), (0, 0, 0.0)]
++        for gpa, extra_credits, expected in cases:
++            with self.subTest(gpa=gpa, credits=extra_credits):
++                self.assertAlmostEqual(
++                    screener.calculate_merit_score(gpa, extra_credits),
++                    expected)
++
++    def test_permitted_custom_formulas(self):
++        cases = {"gpa * 10 + credits * 3": 103.0,
++                 "(gpa + credits) / 2": 6.55,
++                 "-gpa + +credits * 25": 90.9,
++                 "  gpa * 9.5  ": 86.45}
++        for formula, expected in cases.items():
++            with self.subTest(formula=formula):
++                screener.change_formula(formula)
++                self.assertEqual(screener.settings["merit_formula"],
++                                 formula.strip())
++                self.assertAlmostEqual(
++                    screener.calculate_merit_score(9.1, 4), expected)
++
++    def test_malicious_formulas_are_rejected(self):
++        payloads = ['__import__("os").system("echo hacked")',
++                    'open("secret.txt").read()', 'eval("1")', 'exec("1")',
++                    "gpa.__class__.__mro__",
++                    "().__class__.__bases__[0].__subclasses__()",
++                    "[gpa][0]", "lambda: 1", "(x := 5)", 'f"{gpa}"',
++                    "[n for n in range(9)]"]
++        for payload in payloads:
++            with self.subTest(payload=payload):
++                with self.assertRaises(ValueError):
++                    screener.change_formula(payload)
++                self.assertEqual(screener.settings["merit_formula"],
++                                 screener.DEFAULT_MERIT_FORMULA)
++
++    def test_unknown_variables_are_rejected(self):
++        for formula in ("income * 2", "CUTOFF", "__builtins__", "results",
++                        "GPA * 10"):
++            with self.subTest(formula=formula):
++                with self.assertRaisesRegex(ValueError, "unknown name"):
++                    screener.parse_formula(formula)
++
++    def test_unsupported_operations_are_rejected(self):
++        for formula in ("gpa ** 2", "gpa % 3", "gpa // 2", "gpa > 5",
++                        "gpa and credits", "not gpa", "~gpa", "gpa << 1",
++                        "gpa if credits else 1", "(gpa, credits)"):
++            with self.subTest(formula=formula):
++                with self.assertRaisesRegex(ValueError, "not allowed"):
++                    screener.parse_formula(formula)
++
++    def test_non_numeric_and_non_finite_constants_are_rejected(self):
++        for formula in ('"abc" * 10', "True * gpa", "None", "1j * gpa",
++                        "1e999"):
++            with self.subTest(formula=formula):
++                with self.assertRaisesRegex(ValueError, "constant"):
++                    screener.parse_formula(formula)
++
++    def test_malformed_empty_and_oversized_formulas_are_rejected(self):
++        for formula in ("gpa *", "import os", "", "   ", "gpa\x00",
++                        "g" * 101, "+".join(["gpa"] * 20), 42, None):
++            with self.subTest(formula=formula):
++                with self.assertRaises(ValueError):
++                    screener.parse_formula(formula)
++
++    def test_division_by_zero_is_rejected(self):
++        screener.change_formula("gpa / credits")
++        self.assertAlmostEqual(screener.calculate_merit_score(9.0, 3), 3.0)
++        with self.assertRaisesRegex(ValueError, "division by zero"):
++            screener.calculate_merit_score(9.0, 0)
++
++    def test_non_finite_scores_are_rejected(self):
++        screener.change_formula("gpa * 1e308 * 10")
++        with self.assertRaisesRegex(ValueError, "non-finite"):
++            screener.calculate_merit_score(9.1, 4)
++        screener.change_formula("gpa")
++        with self.assertRaisesRegex(ValueError, "non-finite"):
++            screener.calculate_merit_score(float("nan"), 0)
++
++    def test_formula_is_checked_again_when_scoring(self):
++        # Even a formula stored without change_formula() is never executed.
++        screener.settings["merit_formula"] = '__import__("os").getcwd()'
++        with self.assertRaises(ValueError):
++            screener.calculate_merit_score(9.1, 4)
++
++
++class EligibilityTests(ScreenerTestCase):
++    """evaluate_applicant(): eligibility rules, defaults and validation."""
++
++    def test_eligible_applicant(self):
++        self.assertTrue(screener.evaluate_applicant("U001", U001))
++        self.assertEqual(screener.results["U001"],
++                         {"score": 99.0, "eligible": True})
++
++    def test_applicant_below_merit_cutoff(self):
++        self.assertFalse(screener.evaluate_applicant("U002", U002))
++        self.assertEqual(screener.results["U002"],
++                         {"score": 74.0, "eligible": False})
++
++    def test_score_equal_to_cutoff_is_eligible(self):
++        self.assertTrue(screener.evaluate_applicant("U010", {"gpa": 8.5}))
++
++    def test_applicant_at_or_above_income_limit(self):
++        strong = {"gpa": 9.8, "credits": 2}
++        for income in (800000, 800001, 2500000):
++            with self.subTest(income=income):
++                self.assertFalse(screener.evaluate_applicant(
++                    "U011", {**strong, "income": income}))
++        self.assertTrue(screener.evaluate_applicant(
++            "U012", {**strong, "income": 799999}))
++
++    def test_missing_credits_and_income_default_to_zero(self):
++        self.assertFalse(screener.evaluate_applicant("U004", {"gpa": 6.5}))
++        self.assertEqual(screener.results["U004"],
++                         {"score": 65.0, "eligible": False})
++        self.assertTrue(screener.evaluate_applicant("U013", {"gpa": 9.0}))
++        self.assertEqual(screener.results["U013"],
++                         {"score": 90.0, "eligible": True})
++
++    def test_invalid_sample_applicant_u003_is_rejected(self):
++        with self.assertRaises(ValueError) as caught:
++            screener.evaluate_applicant(
++                "U003", {"gpa": 12.5, "credits": -3, "income": -1})
++        for field in ("gpa", "credits", "income"):
++            self.assertIn(field, str(caught.exception))
++        self.assertNotIn("U003", screener.results)
++
++    def test_invalid_values_are_rejected(self):
++        invalid = [{}, {"credits": 3}, {"gpa": -0.1}, {"gpa": 10.01},
++                   {"gpa": "9.1"}, {"gpa": None}, {"gpa": True},
++                   {"gpa": float("nan")}, {"gpa": float("inf")},
++                   {"gpa": 9, "credits": -1}, {"gpa": 9, "credits": "3"},
++                   {"gpa": 9, "credits": float("nan")},
++                   {"gpa": 9, "income": -5}, {"gpa": 9, "income": "low"},
++                   {"gpa": 9, "income": float("inf")}]
++        for scores in invalid:
++            with self.subTest(scores=scores):
++                with self.assertRaises(ValueError):
++                    screener.evaluate_applicant("U020", scores)
++        self.assertEqual(screener.results, {})
++
++    def test_boundary_values_are_accepted(self):
++        for scores in ({"gpa": 0}, {"gpa": 10},
++                       {"gpa": 10.0, "credits": 0, "income": 0}):
++            with self.subTest(scores=scores):
++                screener.evaluate_applicant("U021", scores)
++                self.assertIn("U021", screener.results)
++
++    def test_invalid_student_ids_are_rejected(self):
++        for student_id in ("", "   ", None, 7):
++            with self.subTest(student_id=student_id):
++                with self.assertRaises(ValueError):
++                    screener.evaluate_applicant(student_id, U001)
++
++    def test_log_entry_is_added_to_a_given_list(self):
++        logs = []
++        screener.evaluate_applicant("U001", U001, logs)
++        self.assertEqual(logs, ["U001 scored 99.0"])
++
++    def test_repeated_calls_do_not_share_state(self):
++        # The original default logs=[] was one list shared by every call.
++        for student_id in ("A1", "A2", "A3"):
++            screener.evaluate_applicant(student_id, U001)
++        self.assertEqual(screener.evaluate_applicant.__defaults__, (None,))
++        first, second = [], []
++        screener.evaluate_applicant("B1", U001, first)
++        screener.evaluate_applicant("B2", U005, second)
++        self.assertEqual(first, ["B1 scored 99.0"])
++        self.assertEqual(second, ["B2 scored 90.0"])
++
++
++class PersistenceTests(ScreenerTestCase):
++    """persist_results() and load_results()."""
++
++    def setUp(self):
++        super().setUp()
++        self.folder = self.make_temp_dir()
++        self.path = os.path.join(self.folder, "results.json")
++        screener.evaluate_applicant("U001", U001)
++        self.saved = {"U001": {"score": 99.0, "eligible": True}}
++
++    def write(self, text):
++        """Write *text* to the test's results file as UTF-8."""
++        with open(self.path, "w", encoding="utf-8") as handle:
++            handle.write(text)
++
++    def test_save_writes_json_to_the_given_path(self):
++        self.assertTrue(screener.persist_results(self.path))
++        self.assertEqual(os.listdir(self.folder), ["results.json"])
++        with open(self.path, encoding="utf-8") as handle:
++            self.assertEqual(json.load(handle), self.saved)
++
++    def test_unwritable_path_keeps_current_results(self):
++        missing_folder = os.path.join(self.folder, "missing", "results.json")
++        for path in (missing_folder, self.folder):   # no such folder, a folder
++            with self.subTest(path=path):
++                with self.assertLogs("scholarship_system", "WARNING"):
++                    self.assertFalse(screener.persist_results(path))
++                self.assertEqual(screener.results, self.saved)
++
++    def test_permission_error_is_reported(self):
++        # Simulated, so the test behaves the same on every platform.
++        denied = PermissionError(13, "Permission denied")
++        with mock.patch("builtins.open", side_effect=denied):
++            with self.assertLogs("scholarship_system", "WARNING") as logged:
++                self.assertFalse(screener.persist_results(self.path))
++        self.assertIn("Permission denied", logged.output[0])
++        self.assertEqual(screener.results, self.saved)
++
++    def test_error_while_writing_is_reported(self):
++        # The file opens, but writing fails, for example on a full disk.
++        disk_full = OSError(28, "No space left on device")
++        with mock.patch("json.dump", side_effect=disk_full):
++            with self.assertLogs("scholarship_system", "WARNING") as logged:
++                self.assertFalse(screener.persist_results(self.path))
++        self.assertIn("No space left on device", logged.output[0])
++        self.assertEqual(screener.results, self.saved)
++
++    def test_load_restores_saved_results(self):
++        screener.evaluate_applicant("U002", U002)
++        expected = dict(screener.results)
++        screener.persist_results(self.path)
++        screener.results.clear()
++        self.assertTrue(screener.load_results(self.path))
++        self.assertEqual(screener.results, expected)
++
++    def test_load_replaces_the_current_results_in_place(self):
++        # Code holding a reference (from scholarship_system import results)
++        # must see the loaded data, so the dict is updated, not rebound.
++        shared = screener.results
++        loaded = {"U005": {"score": 90.0, "eligible": True}}
++        self.write(json.dumps(loaded))
++        self.assertTrue(screener.load_results(self.path))
++        self.assertIs(screener.results, shared)
++        self.assertEqual(shared, loaded)
++
++    def test_load_reads_utf8(self):
++        data = {"Zoë-07": {"score": 91.5, "eligible": True}}
++        self.write(json.dumps(data, ensure_ascii=False))
++        self.assertTrue(screener.load_results(self.path))
++        self.assertEqual(screener.results, data)
++
++    def test_missing_file_keeps_current_results(self):
++        with self.assertLogs("scholarship_system", "WARNING") as logged:
++            self.assertFalse(screener.load_results(self.path))
++        self.assertIn("No saved results", logged.output[0])
++        self.assertEqual(screener.results, self.saved)
++
++    def test_malformed_json_keeps_current_results(self):
++        for text in ("{not json", "", '{"U9": {"score": 9'):
++            with self.subTest(text=text):
++                self.write(text)
++                with self.assertLogs("scholarship_system", "WARNING"):
++                    self.assertFalse(screener.load_results(self.path))
++                self.assertEqual(screener.results, self.saved)
++
++    def test_unexpected_structure_keeps_current_results(self):
++        for data in ([1, 2], {"U9": "yes"}, {"U9": {"score": 90.0}},
++                     {"U9": {"score": "high", "eligible": True}},
++                     {"U9": {"score": 90.0, "eligible": "yes"}}):
++            with self.subTest(data=data):
++                self.write(json.dumps(data))
++                with self.assertLogs("scholarship_system", "WARNING"):
++                    self.assertFalse(screener.load_results(self.path))
++                self.assertEqual(screener.results, self.saved)
++
++    def test_unreadable_file_keeps_current_results(self):
++        with open(self.path, "wb") as handle:
++            handle.write(b"\xff\xfe not utf-8")
++        for path in (self.path, self.folder):   # undecodable, a directory
++            with self.subTest(path=path):
++                with self.assertLogs("scholarship_system", "WARNING"):
++                    self.assertFalse(screener.load_results(path))
++                self.assertEqual(screener.results, self.saved)
++
++
++class ShortlistTests(ScreenerTestCase):
++    """print_shortlist() output."""
++
++    @staticmethod
++    def shortlist():
++        """Return what print_shortlist() prints."""
++        buffer = io.StringIO()
++        with contextlib.redirect_stdout(buffer):
++            screener.print_shortlist()
++        return buffer.getvalue()
++
++    def test_includes_eligible_and_excludes_ineligible(self):
++        screener.evaluate_applicant("U001", U001)
++        screener.evaluate_applicant("U002", U002)
++        screener.evaluate_applicant(
++            "U006", {"gpa": 9.8, "credits": 2, "income": 950000})
++        screener.evaluate_applicant("U005", U005)
++        self.assertEqual(self.shortlist(),
++                         "Shortlisted applicants:\n"
++                         "  U001 score = 99.0\n"
++                         "  U005 score = 90.0\n")
++
++    def test_empty_shortlist(self):
++        self.assertEqual(self.shortlist(), "Shortlisted applicants:\n")
++        screener.evaluate_applicant("U002", U002)
++        self.assertEqual(self.shortlist(), "Shortlisted applicants:\n")
++
++    def test_score_display_follows_the_active_formula(self):
++        screener.change_formula("gpa * 10 + credits * 3")
++        screener.evaluate_applicant("U001", U001)
++        self.assertEqual(self.shortlist(),
++                         "Shortlisted applicants:\n  U001 score = 103.0\n")
++
++
++class ProgramTests(ScreenerTestCase):
++    """main() and the module's import behaviour."""
++
++    def run_main(self, answer, folder=None):
++        """Run main() in *folder* (default: a new temporary directory).
++
++        Returns (output, folder).
++        """
++        folder = folder or self.make_temp_dir()
++        self.addCleanup(os.chdir, os.getcwd())
++        os.chdir(folder)
++        buffer = io.StringIO()
++        with mock.patch("builtins.input", return_value=answer), \
++                contextlib.redirect_stdout(buffer):
++            screener.main()
++        return buffer.getvalue(), folder
++
++    def test_demonstration_with_default_formula(self):
++        output, folder = self.run_main("")
++        self.assertIn("Skipped U003: gpa must be between 0 and 10", output)
++        self.assertTrue(output.endswith("Shortlisted applicants:\n"
++                                        "  U001 score = 99.0\n"
++                                        "  U005 score = 90.0\n"))
++        self.assertEqual(os.listdir(folder), ["scholarships.json"])
++
++    def test_custom_formula_applies_to_every_applicant(self):
++        output, _ = self.run_main("gpa * 10 + credits * 3")
++        self.assertIn("U001 score = 103.0", output)
++        self.assertIn("U005 score = 93.0", output)
++
++    def test_rejected_formula_keeps_the_default(self):
++        output, _ = self.run_main("gpa ** 2")
++        self.assertIn("Formula rejected", output)
++        self.assertIn("U001 score = 99.0", output)
++
++    def test_failed_save_does_not_reload_an_older_file(self):
++        # scholarships.json from an earlier run has become read-only (this is
++        # simulated, so it behaves the same on every platform). Saving fails,
++        # and the old file must not be read back in place of this run's
++        # results.
++        folder = self.make_temp_dir()
++        old_file = os.path.join(folder, "scholarships.json")
++        old_text = json.dumps({"OLD1": {"score": 120.0, "eligible": True}})
++        with open(old_file, "w", encoding="utf-8") as handle:
++            handle.write(old_text)
++        real_open = open
++
++        def read_only_open(file, mode="r", **kwargs):
++            if "w" in mode:
++                raise PermissionError(13, "Permission denied", file)
++            return real_open(file, mode, **kwargs)
++
++        with mock.patch("builtins.open", read_only_open), \
++                self.assertLogs("scholarship_system", "WARNING") as logged:
++            output, _ = self.run_main("", folder)
++        self.assertIn("Could not save results", logged.output[0])
++        self.assertTrue(output.endswith("Shortlisted applicants:\n"
++                                        "  U001 score = 99.0\n"
++                                        "  U005 score = 90.0\n"))
++        self.assertNotIn("OLD1", screener.results)
++        with open(old_file, encoding="utf-8") as handle:
++            self.assertEqual(handle.read(), old_text)
++
++    def test_unwritable_results_file_does_not_crash_the_program(self):
++        # A folder named scholarships.json cannot be opened for writing.
++        folder = self.make_temp_dir()
++        os.mkdir(os.path.join(folder, "scholarships.json"))
++        result = run_program("", folder)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertNotIn("Traceback", result.stderr)
++        self.assertIn("Could not save results to scholarships.json",
++                      result.stderr)
++        self.assertIn("U001 score = 99.0", result.stdout)
++        self.assertIn("U005 score = 90.0", result.stdout)
++
++    def test_import_does_not_run_the_demonstration(self):
++        folder = self.make_temp_dir()
++        env = dict(os.environ, PYTHONPATH=HERE, PYTHONDONTWRITEBYTECODE="1")
++        result = subprocess.run(
++            [sys.executable, "-c", "import scholarship_system"],
++            input="\n", capture_output=True, text=True, cwd=folder, env=env,
++            timeout=60, check=False)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertEqual(result.stdout, "")         # no prompt, no shortlist
++        self.assertEqual(os.listdir(folder), [])    # no scholarships.json
++
++
+ if __name__ == "__main__":
+     unittest.main()
+-- 
+2.55.0.windows.5
+

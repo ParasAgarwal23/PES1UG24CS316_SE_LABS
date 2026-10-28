@@ -1,3 +1,6 @@
 __pycache__/
 .venv/
 scholarships.json
+
+# Class list with other students' names and SRNs: keep it local only.
+/F-Sec_Lab-5-Repo-Assignemnt.pdf

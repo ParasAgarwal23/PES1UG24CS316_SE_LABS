@@ -1,0 +1,281 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ParasAgarwal23 <parasagarwal2006@gmail.com>
+Date: Wed, 28 Oct 2026 19:40:54 +0530
+Subject: [PATCH] fix(security): address Bandit findings
+
+- B307 (eval, Medium): replace eval() of the merit formula with a small
+  AST-based evaluator that accepts only gpa, credits, numeric constants,
+  + - * / and unary +/-, with length and complexity limits. Division by
+  zero and non-finite scores raise ValueError. A formula rejected at the
+  prompt is reported and the current formula is kept.
+- B110 (try/except/pass, Low): load_results() catches only missing-file,
+  OS, decoding and JSON errors, logs a warning and returns False instead
+  of silently ignoring every exception.
+- Add the post-fix Bandit report (no issues identified) and four
+  subprocess-based security tests: a code-injection payload is not run,
+  invalid formulas are rejected without crashing, and the default and a
+  valid custom formula still give the expected scores.
+---
+ .../reports/after/bandit_report.txt           |  22 ++++
+ .../scholarship_system.py                     | 114 +++++++++++++++++-
+ .../test_scholarship_system.py                |  65 ++++++++++
+ 3 files changed, 196 insertions(+), 5 deletions(-)
+ create mode 100644 Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+ create mode 100644 Lab-5_Static_Code_Analysis/test_scholarship_system.py
+
+diff --git a/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+new file mode 100644
+index 0000000..747812e
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/reports/after/bandit_report.txt
+@@ -0,0 +1,22 @@
++﻿Run started:2026-10-28 05:53:14.695109+00:00
++
++Test results:
++	No issues identified.
++
++Code scanned:
++	Total lines of code: 144
++	Total lines skipped (#nosec): 0
++	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
++
++Run metrics:
++	Total issues (by severity):
++		Undefined: 0
++		Low: 0
++		Medium: 0
++		High: 0
++	Total issues (by confidence):
++		Undefined: 0
++		Low: 0
++		Medium: 0
++		High: 0
++Files skipped (0):
+diff --git a/Lab-5_Static_Code_Analysis/scholarship_system.py b/Lab-5_Static_Code_Analysis/scholarship_system.py
+index 259b0a4..5ff0f01 100644
+--- a/Lab-5_Static_Code_Analysis/scholarship_system.py
++++ b/Lab-5_Static_Code_Analysis/scholarship_system.py
+@@ -1,15 +1,110 @@
++import ast
+ import json
++import logging
+ import math
++import operator
+ import sys
+ 
++LOGGER = logging.getLogger(__name__)
++
+ # Global state
+ results = {}
+ MERIT_FORMULA = "gpa * 10 + credits * 2"
+ INCOME_LIMIT = 800000
+ CUTOFF = 85
+ 
++# Merit formulas are untrusted text (main() reads one from input), so they are
++# checked and evaluated by a small arithmetic-only interpreter, never eval().
++FORMULA_VARIABLES = ("gpa", "credits")
++MAX_FORMULA_LENGTH = 100
++MAX_FORMULA_NODES = 50
++_BINARY_OPERATORS = {
++    ast.Add: operator.add,
++    ast.Sub: operator.sub,
++    ast.Mult: operator.mul,
++    ast.Div: operator.truediv,
++}
++_UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
++_ALLOWED_NODES = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Name, ast.Load,
++                  ast.Constant, *_BINARY_OPERATORS, *_UNARY_OPERATORS)
++
++def _is_finite_number(value):
++    """Return True for an int or a finite float (bools are rejected)."""
++    if isinstance(value, bool):
++        return False
++    if isinstance(value, int):
++        return True
++    return isinstance(value, float) and math.isfinite(value)
++
++def _check_formula_node(node):
++    """Raise ValueError unless *node* may appear in a merit formula."""
++    if not isinstance(node, _ALLOWED_NODES):
++        raise ValueError(
++            f"{type(node).__name__} is not allowed in a merit formula")
++    if isinstance(node, ast.Name) and node.id not in FORMULA_VARIABLES:
++        raise ValueError(f"unknown name {node.id!r} in merit formula "
++                         f"(allowed: {', '.join(FORMULA_VARIABLES)})")
++    if isinstance(node, ast.Constant) and not _is_finite_number(node.value):
++        raise ValueError(
++            f"constant {node.value!r} is not allowed in a merit formula")
++
++def parse_formula(formula):
++    """Check that *formula* is safe arithmetic and return its syntax tree.
++
++    A merit formula may only use the variables gpa and credits, int or float
++    constants, parentheses, the operators + - * / and unary + or -. Anything
++    else (function calls, attribute access, subscripts, other names, **,
++    comparisons, ...) raises ValueError, as does a formula longer than
++    MAX_FORMULA_LENGTH characters or with more than MAX_FORMULA_NODES nodes.
++    """
++    if not isinstance(formula, str):
++        raise ValueError("merit formula must be a string")
++    formula = formula.strip()
++    if not formula:
++        raise ValueError("merit formula is empty")
++    if len(formula) > MAX_FORMULA_LENGTH:
++        raise ValueError(
++            f"merit formula is longer than {MAX_FORMULA_LENGTH} characters")
++    try:
++        tree = ast.parse(formula, mode="eval")
++    except SyntaxError as error:
++        raise ValueError(
++            f"merit formula is not valid syntax ({error.msg})") from error
++    nodes = list(ast.walk(tree))
++    if len(nodes) > MAX_FORMULA_NODES:
++        raise ValueError("merit formula is too complex")
++    for node in nodes:
++        _check_formula_node(node)
++    return tree
++
++def _evaluate(node, variables):
++    """Evaluate a formula syntax tree that parse_formula() has checked."""
++    if isinstance(node, ast.Expression):
++        return _evaluate(node.body, variables)
++    if isinstance(node, ast.BinOp):
++        operation = _BINARY_OPERATORS[type(node.op)]
++        return operation(_evaluate(node.left, variables),
++                         _evaluate(node.right, variables))
++    if isinstance(node, ast.UnaryOp):
++        operation = _UNARY_OPERATORS[type(node.op)]
++        return operation(_evaluate(node.operand, variables))
++    if isinstance(node, ast.Name):
++        return float(variables[node.id])
++    if isinstance(node, ast.Constant):
++        return float(node.value)
++    raise ValueError(
++        f"{type(node).__name__} is not allowed in a merit formula")
++
+ def calculate_merit_score(gpa, credits):
+-    return eval(MERIT_FORMULA)
++    tree = parse_formula(MERIT_FORMULA)
++    try:
++        score = _evaluate(tree, {"gpa": gpa, "credits": credits})
++    except (ZeroDivisionError, OverflowError) as error:
++        raise ValueError(
++            f"merit formula cannot be evaluated: {error}") from error
++    if not math.isfinite(score):
++        raise ValueError(f"merit formula gave a non-finite score ({score})")
++    return score
+ 
+ def evaluate_applicant(student_id, test_scores, logs=[]):
+     gpa = test_scores["gpa"]
+@@ -23,7 +118,8 @@ def evaluate_applicant(student_id, test_scores, logs=[]):
+ 
+ def change_formula(new_formula):
+     global MERIT_FORMULA
+-    MERIT_FORMULA = new_formula
++    parse_formula(new_formula)
++    MERIT_FORMULA = new_formula.strip()
+ 
+ def persist_results(file="scholarships.json"):
+     f = open(file, "w")
+@@ -34,8 +130,13 @@ def load_results(file="scholarships.json"):
+     global results
+     try:
+         results = json.loads(open(file).read())
+-    except:
+-        pass
++    except FileNotFoundError:
++        LOGGER.warning("No saved results found at %s", file)
++        return False
++    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
++        LOGGER.warning("Could not load results from %s: %s", file, error)
++        return False
++    return True
+ 
+ def printShortlist():
+     print("Shortlisted applicants:")
+@@ -50,7 +151,10 @@ def main():
+     evaluate_applicant("U004", {"gpa": 6.5})
+     formula = input("Merit formula (Enter to keep default): ")
+     if formula:
+-        change_formula(formula)
++        try:
++            change_formula(formula)
++        except ValueError as error:
++            print(f"Formula rejected: {error}. Keeping {MERIT_FORMULA!r}.")
+     evaluate_applicant("U005", {"gpa": 8.4, "credits": 3, "income": 600000})
+     persist_results()
+     load_results()
+diff --git a/Lab-5_Static_Code_Analysis/test_scholarship_system.py b/Lab-5_Static_Code_Analysis/test_scholarship_system.py
+new file mode 100644
+index 0000000..00d5da3
+--- /dev/null
++++ b/Lab-5_Static_Code_Analysis/test_scholarship_system.py
+@@ -0,0 +1,65 @@
++"""Functional tests for scholarship_system.py.
++
++Run from the Lab-5_Static_Code_Analysis directory:  python -m unittest -v
++"""
++
++import os
++import subprocess
++import sys
++import tempfile
++import unittest
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++PROGRAM = os.path.join(HERE, "scholarship_system.py")
++
++
++def run_program(answer, cwd):
++    """Run the screener in *cwd*, answer its formula prompt, return result."""
++    return subprocess.run(
++        [sys.executable, PROGRAM], input=answer + "\n", capture_output=True,
++        text=True, cwd=cwd, timeout=60, check=False,
++    )
++
++
++class FormulaSecurityTests(unittest.TestCase):
++    """A formula typed at the prompt must never run as Python code."""
++
++    def setUp(self):
++        scratch = tempfile.TemporaryDirectory()
++        self.addCleanup(scratch.cleanup)
++        self.workdir = scratch.name
++
++    def test_injected_code_is_not_executed(self):
++        payload = ('__import__("pathlib").Path("injected.txt")'
++                   '.write_text("x") or 100')
++        result = run_program(payload, self.workdir)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertFalse(
++            os.path.exists(os.path.join(self.workdir, "injected.txt")),
++            "the formula was executed as Python code")
++        self.assertIn("Formula rejected", result.stdout)
++
++    def test_invalid_formulas_are_rejected_without_crashing(self):
++        for formula in ("gpa *", "income * 2", "gpa ** 2", "open('x')"):
++            with self.subTest(formula=formula):
++                result = run_program(formula, self.workdir)
++                self.assertEqual(result.returncode, 0, result.stderr)
++                self.assertIn("Formula rejected", result.stdout)
++                # The default formula stays in force.
++                self.assertIn("U005 score = 90.0", result.stdout)
++
++    def test_default_formula_scores_are_unchanged(self):
++        result = run_program("", self.workdir)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertIn("U001 score = 99.0", result.stdout)
++        self.assertIn("U005 score = 90.0", result.stdout)
++
++    def test_valid_custom_formula_is_still_supported(self):
++        result = run_program("gpa * 10 + credits * 3", self.workdir)
++        self.assertEqual(result.returncode, 0, result.stderr)
++        self.assertNotIn("Formula rejected", result.stdout)
++        self.assertIn("U005 score = 93.0", result.stdout)
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.55.0.windows.5
+

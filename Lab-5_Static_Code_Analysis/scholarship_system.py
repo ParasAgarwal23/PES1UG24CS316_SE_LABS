@@ -42,6 +42,7 @@ _UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 _ALLOWED_NODES = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Name, ast.Load,
                   ast.Constant, *_BINARY_OPERATORS, *_UNARY_OPERATORS)
 
+
 def _is_finite_number(value):
     """Return True for an int or a finite float (bools are rejected)."""
     if isinstance(value, bool):
@@ -49,6 +50,7 @@ def _is_finite_number(value):
     if isinstance(value, int):
         return True
     return isinstance(value, float) and math.isfinite(value)
+
 
 def _check_formula_node(node):
     """Raise ValueError unless *node* may appear in a merit formula."""
@@ -61,6 +63,7 @@ def _check_formula_node(node):
     if isinstance(node, ast.Constant) and not _is_finite_number(node.value):
         raise ValueError(
             f"constant {node.value!r} is not allowed in a merit formula")
+
 
 def parse_formula(formula):
     """Check that *formula* is safe arithmetic and return its syntax tree.
@@ -91,6 +94,7 @@ def parse_formula(formula):
         _check_formula_node(node)
     return tree
 
+
 def _evaluate(node, variables):
     """Evaluate a formula syntax tree that parse_formula() has checked."""
     if isinstance(node, ast.Expression):
@@ -109,6 +113,7 @@ def _evaluate(node, variables):
     raise ValueError(
         f"{type(node).__name__} is not allowed in a merit formula")
 
+
 def calculate_merit_score(gpa, extra_credits):
     """Return the merit score for a GPA and extracurricular credits.
 
@@ -125,6 +130,7 @@ def calculate_merit_score(gpa, extra_credits):
     if not math.isfinite(score):
         raise ValueError(f"merit formula gave a non-finite score ({score})")
     return score
+
 
 def _validate_scores(test_scores):
     """Return (gpa, extra_credits, income) from an applicant's test scores.
@@ -152,6 +158,7 @@ def _validate_scores(test_scores):
         raise ValueError("; ".join(problems))
     return gpa, extra_credits, income
 
+
 def evaluate_applicant(student_id, test_scores, logs=None):
     """Score one applicant, record the result and return their eligibility.
 
@@ -172,6 +179,7 @@ def evaluate_applicant(student_id, test_scores, logs=None):
         logs.append(f"{student_id} scored {score}")
     return eligible
 
+
 def change_formula(new_formula):
     """Make new_formula the active merit formula if it is safe arithmetic.
 
@@ -179,6 +187,7 @@ def change_formula(new_formula):
     """
     parse_formula(new_formula)
     settings["merit_formula"] = new_formula.strip()
+
 
 def persist_results(file=RESULTS_FILE):
     """Save the current results to a UTF-8 JSON file.
@@ -195,6 +204,7 @@ def persist_results(file=RESULTS_FILE):
         return False
     return True
 
+
 def _is_valid_results(data):
     """Return True if data has the shape that persist_results() writes."""
     return isinstance(data, dict) and all(
@@ -202,6 +212,7 @@ def _is_valid_results(data):
         and _is_finite_number(record.get("score"))
         and isinstance(record.get("eligible"), bool)
         for record in data.values())
+
 
 def load_results(file=RESULTS_FILE):
     """Replace the in-memory results with those saved in a JSON file.
@@ -226,12 +237,14 @@ def load_results(file=RESULTS_FILE):
     results.update(loaded)
     return True
 
+
 def print_shortlist():
     """Print the id and merit score of every eligible applicant."""
     print("Shortlisted applicants:")
     for student_id, record in results.items():
         if record["eligible"]:
             print(" ", student_id, "score =", record["score"])
+
 
 def main():
     """Ask for a merit formula, then screen, save and shortlist applicants."""
@@ -260,6 +273,7 @@ def main():
     if persist_results():
         load_results()
     print_shortlist()
+
 
 if __name__ == "__main__":
     main()

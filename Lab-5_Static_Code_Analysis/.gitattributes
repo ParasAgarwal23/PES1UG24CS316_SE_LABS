@@ -1,0 +1,3 @@
+# Keep the patch files exactly as generated (LF line endings), so that
+# git apply and git am work on every platform.
+commits/*.patch -text
