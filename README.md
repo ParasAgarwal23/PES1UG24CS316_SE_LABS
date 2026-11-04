@@ -1,8 +1,9 @@
 ﻿# PES1UG24CS316 - Software Engineering Labs
 
 **Course:** Software Engineering  
+**Name:** Paras Agarwal  
 **SRN:** PES1UG24CS316  
-**Name:** Paras Agarwal
+**Section:** F
 
 This repository holds my Software Engineering lab work. Each lab has its own
 folder with a README that describes the assignment, the deliverables and the
@@ -17,6 +18,7 @@ results.
 | Lab 3 | Component Modelling & Architectural Pattern Selection | [`Lab-3_Component-Modelling/`](Lab-3_Component-Modelling/) |
 | Lab 4 | Vibe Coding: Maze Chase | [`Lab-4_Vibe-Coding-Maze-Chase/`](Lab-4_Vibe-Coding-Maze-Chase/) |
 | Lab 5 | Static Code Analysis | [`Lab-5_Static_Code_Analysis/`](Lab-5_Static_Code_Analysis/) |
+| Lab 6 | Code and Branch Coverage Analysis | [`Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/`](Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/) |
 
 ## Lab 1 — Requirements Engineering & UML Use-Case Modelling
 
@@ -72,3 +74,19 @@ Pylint improved from 4.69/10 to 10.00/10, and Bandit and Flake8 findings went
 from 2 and 12 to none.
 
 Folder: [`Lab-5_Static_Code_Analysis/`](Lab-5_Static_Code_Analysis/)
+
+## Lab 6 — Code and Branch Coverage Analysis
+
+Test-coverage analysis of the Amusement Park Ride Access module
+(`amusement_park_ride_access.py`), which handles ride admission, ticket
+pricing, height and health-warning checks, fast-lane fees and
+safety-restraint sensor monitoring. The work uses **pytest** and
+**Coverage.py** to measure the **line coverage** and **branch coverage** of
+the starter test, and then adds two test suites, one written for line coverage
+and one for branch coverage.
+
+Line coverage went from 48.28% (28/58 statements) with the starter test to
+100% (58/58) with the code coverage suite, and branch coverage went from
+40.00% (16/40 branches) to 100% (40/40) with the branch coverage suite.
+
+Folder: [`Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/`](Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/)
