@@ -1,0 +1,4 @@
+# Test and coverage tools, pinned to the versions used for the reports and
+# screenshots. amusement_park_ride_access.py itself needs only the standard library.
+pytest==9.2.0
+coverage==7.17.1

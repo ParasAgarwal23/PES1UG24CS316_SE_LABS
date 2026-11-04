@@ -1,0 +1,4 @@
+# Keep the assigned application and starter test exactly as supplied
+# (CRLF line endings), so they stay byte-for-byte identical to the originals.
+PES1UG24CS316_Lab6_amusement_park_ride_access/amusement_park_ride_access.py -text
+PES1UG24CS316_Lab6_amusement_park_ride_access/test_amusement_park.py -text
