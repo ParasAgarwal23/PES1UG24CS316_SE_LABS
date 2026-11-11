@@ -19,6 +19,7 @@ results.
 | Lab 4 | Vibe Coding: Maze Chase | [`Lab-4_Vibe-Coding-Maze-Chase/`](Lab-4_Vibe-Coding-Maze-Chase/) |
 | Lab 5 | Static Code Analysis | [`Lab-5_Static_Code_Analysis/`](Lab-5_Static_Code_Analysis/) |
 | Lab 6 | Code and Branch Coverage Analysis | [`Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/`](Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/) |
+| Lab 7 | Fuzzing for Input Validation Bugs | [`Lab-7_Fuzzing_for_Input_Validation_Bugs/`](Lab-7_Fuzzing_for_Input_Validation_Bugs/) |
 
 ## Lab 1 — Requirements Engineering & UML Use-Case Modelling
 
@@ -90,3 +91,27 @@ Line coverage went from 48.28% (28/58 statements) with the starter test to
 40.00% (16/40 branches) to 100% (40/40) with the branch coverage suite.
 
 Folder: [`Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/`](Lab-6_Code_and_Branch_Coverage/PES1UG24CS316_Lab6_amusement_park_ride_access/)
+
+## Lab 7 — Fuzzing for Input Validation Bugs
+
+Fuzz testing of the Amusement Park Ride Access processor (`processor.py`) from
+the `Lab 7` folder of the assigned repository
+[SETAPESU26/L6_L7_11_amusement_park_ride_access](https://github.com/SETAPESU26/L6_L7_11_amusement_park_ride_access).
+The script validates rider height and FastPass specs, computes dispatch
+throughput and resolves safety-restraint codes. **Hypothesis** property-based
+tests run with **pytest** found six input-validation bugs, including crashes
+on `None`, empty or unknown values, a division by zero, and an accepted 0 cm
+height and negative throughput. All of these were fixed in the script.
+
+The Hypothesis suite went from 6 failed and 3 passed on the original script to
+9 passed on the fixed script.
+
+The folder contains:
+
+- `processor.py`, the fixed application;
+- `test_processor.py`, the Hypothesis fuzz tests;
+- `Lab7_Fuzzing_Report.pdf`, the lab report;
+- `screenshots/`, four terminal screenshots of the original run, the failing
+  tests, the fixed run and the passing tests.
+
+Folder: [`Lab-7_Fuzzing_for_Input_Validation_Bugs/`](Lab-7_Fuzzing_for_Input_Validation_Bugs/)
